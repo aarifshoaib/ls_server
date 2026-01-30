@@ -182,8 +182,6 @@ export class PayrollArchiveService {
       deductions: emp.deductions,
       advanceDeductions: emp.advanceDeductions,
       grossSalary: emp.grossSalary,
-      totalDeductions: emp.totalDeductions,
-      totalAdvanceDeductions: emp.totalAdvanceDeductions,
       netSalary: emp.netSalary,
       attendance: emp.attendance,
       proration: emp.proration,

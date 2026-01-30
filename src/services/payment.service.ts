@@ -1,4 +1,4 @@
-import mongoose from 'mongoose';
+import mongoose, { Types } from 'mongoose';
 import Customer from '../models/Customer';
 import Order from '../models/Order';
 import CustomerLedger from '../models/CustomerLedger';
@@ -61,7 +61,7 @@ export class PaymentService {
             method,
             reference,
             paidAt: new Date(),
-            receivedBy: userId,
+            receivedBy: new Types.ObjectId(userId),
           });
           await order.save({ session });
 
@@ -102,7 +102,7 @@ export class PaymentService {
               method,
               reference,
               paidAt: new Date(),
-              receivedBy: userId,
+              receivedBy: new Types.ObjectId(userId),
             });
             await openOrder.save({ session });
 
