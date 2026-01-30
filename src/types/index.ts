@@ -346,7 +346,7 @@ export interface IOrderPricing {
 }
 
 export interface IPayment {
-  _id: Types.ObjectId;
+  _id?: Types.ObjectId;
   amount: number;
   method: PaymentMethod;
   reference?: string;
