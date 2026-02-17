@@ -8,36 +8,36 @@ const router = Router();
 router.use(authMiddleware);
 
 // Get all holidays with pagination and filters
-router.get('/', requirePermission('holidays.read'), HolidayController.getAll);
+router.get('/', requirePermission('holidays:read'), HolidayController.getAll);
 
 // Get holiday statistics
-router.get('/statistics', requirePermission('holidays.read'), HolidayController.getStatistics);
+router.get('/statistics', requirePermission('holidays:read'), HolidayController.getStatistics);
 
 // Get holidays for a specific period (date range)
-router.get('/period', requirePermission('holidays.read'), HolidayController.getForPeriod);
+router.get('/period', requirePermission('holidays:read'), HolidayController.getForPeriod);
 
 // Check if a date is a holiday
-router.get('/check', requirePermission('holidays.read'), HolidayController.checkIsHoliday);
+router.get('/check', requirePermission('holidays:read'), HolidayController.checkIsHoliday);
 
 // Get holidays by year
-router.get('/year/:year', requirePermission('holidays.read'), HolidayController.getByYear);
+router.get('/year/:year', requirePermission('holidays:read'), HolidayController.getByYear);
 
 // Get statistics
-router.get('/statistics', requirePermission('holidays.read'), HolidayController.getStatistics);
+router.get('/statistics', requirePermission('holidays:read'), HolidayController.getStatistics);
 
 // Get holiday by ID
-router.get('/:id', requirePermission('holidays.read'), HolidayController.getById);
+router.get('/:id', requirePermission('holidays:read'), HolidayController.getById);
 
 // Create holiday
-router.post('/', requirePermission('holidays.create'), HolidayController.create);
+router.post('/', requirePermission('holidays:create'), HolidayController.create);
 
 // Bulk create holidays
-router.post('/bulk', requirePermission('holidays.create'), HolidayController.bulkCreate);
+router.post('/bulk', requirePermission('holidays:create'), HolidayController.bulkCreate);
 
 // Update holiday
-router.put('/:id', requirePermission('holidays.update'), HolidayController.update);
+router.put('/:id', requirePermission('holidays:update'), HolidayController.update);
 
 // Delete holiday
-router.delete('/:id', requirePermission('holidays.delete'), HolidayController.delete);
+router.delete('/:id', requirePermission('holidays:delete'), HolidayController.delete);
 
 export default router;

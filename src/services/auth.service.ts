@@ -2,15 +2,15 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { Types } from 'mongoose';
 import User from '../models/User';
+import Role from '../models/Role';
 import { config } from '../config';
 import { errors } from '../utils/errors';
-import { ROLE_PERMISSIONS } from '../utils/constants';
 import { IUser, IJWTPayload } from '../types';
 
 export class AuthService {
   // Generate access token
-  static generateAccessToken(user: IUser): string {
-    const permissions = this.getUserPermissions(user);
+  static async generateAccessToken(user: IUser): Promise<string> {
+    const permissions = await this.getUserPermissions(user);
 
     const payload: IJWTPayload = {
       sub: user._id.toString(),
@@ -38,33 +38,29 @@ export class AuthService {
     } as jwt.SignOptions);
   }
 
-  // Get user permissions based on role
-  static getUserPermissions(user: IUser): string[] {
+  // Get user permissions based on role from database
+  static async getUserPermissions(user: IUser): Promise<string[]> {
     // If user has custom permissions, use those
     if (user.permissions && user.permissions.length > 0) {
       return user.permissions;
     }
 
-    // Otherwise, use role-based permissions
-    const rolePermissions = ROLE_PERMISSIONS[user.role];
+    // Fetch role from database
+    const role = await Role.findOne({ name: user.role, isActive: true });
 
-    if (rolePermissions === '*') {
-      return ['*'];
+    if (!role) {
+      return [];
     }
 
-    if (typeof rolePermissions === 'object') {
-      const permissions: string[] = [];
-      Object.entries(rolePermissions).forEach(([module, actions]) => {
-        if (Array.isArray(actions)) {
-          actions.forEach((action) => {
-            permissions.push(`${module}.${action}`);
-          });
-        }
+    // Build permissions array with format "module:action"
+    const permissions: string[] = [];
+    role.permissions.forEach((modulePermission) => {
+      modulePermission.actions.forEach((action) => {
+        permissions.push(`${modulePermission.module}:${action}`);
       });
-      return permissions;
-    }
+    });
 
-    return [];
+    return permissions;
   }
 
   // Hash password
@@ -119,8 +115,14 @@ export class AuthService {
     user.lockedUntil = undefined;
     user.lastLogin = new Date();
 
+    // Compute permissions from role before generating the access token so we can
+    // reuse the result in both the JWT payload and the login response body.
+    // generateAccessToken() calls getUserPermissions() internally, so we call it
+    // once here to avoid a second database round-trip.
+    const computedPermissions = await this.getUserPermissions(user);
+
     // Generate tokens
-    const accessToken = this.generateAccessToken(user);
+    const accessToken = await this.generateAccessToken(user);
     const refreshToken = this.generateRefreshToken(user, deviceInfo);
 
     // Save refresh token
@@ -146,6 +148,12 @@ export class AuthService {
     delete userObject.passwordHash;
     delete userObject.passwordSalt;
     delete userObject.refreshTokens;
+
+    // Overwrite the user's raw custom-override permissions array with the full
+    // computed set so the frontend receives the correct permission list in the
+    // login response body (the JWT already has them, but parsing the JWT on the
+    // client side is not required by our design).
+    userObject.permissions = computedPermissions;
 
     return {
       user: userObject,
@@ -173,7 +181,7 @@ export class AuthService {
       }
 
       // Generate new tokens
-      const newAccessToken = this.generateAccessToken(user);
+      const newAccessToken = await this.generateAccessToken(user);
       const newRefreshToken = this.generateRefreshToken(user, decoded.deviceInfo);
 
       // Remove old refresh token and add new one

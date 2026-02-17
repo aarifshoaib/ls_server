@@ -7,6 +7,6 @@ const router = Router();
 
 router.use(authMiddleware);
 
-router.post('/', requirePermission('payments.process_payment'), PaymentController.create);
+router.post('/', requirePermission('payments:process_payment'), PaymentController.create);
 
 export default router;

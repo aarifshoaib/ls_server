@@ -8,6 +8,7 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "seed": "ts-node src/scripts/seed.ts",
+    "seed:roles": "ts-node src/scripts/seedRoles.ts",
     "seed:components": "ts-node src/scripts/seedComponents.ts",
     "seed:lookups": "ts-node src/scripts/seedLookupValues.ts",
     "lint": "eslint . --ext .ts",

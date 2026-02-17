@@ -7,7 +7,7 @@ const router = Router();
 
 router.use(authMiddleware);
 
-router.get('/', requirePermission('categories.read'), async (_req, res, next) => {
+router.get('/', requirePermission('categories:read'), async (_req, res, next) => {
   try {
     const categories = await Category.find({ isActive: true }).sort({ sortOrder: 1 });
     res.json({ success: true, data: categories });
@@ -16,7 +16,7 @@ router.get('/', requirePermission('categories.read'), async (_req, res, next) =>
   }
 });
 
-router.post('/', requirePermission('categories.create'), async (req, res, next) => {
+router.post('/', requirePermission('categories:create'), async (req, res, next) => {
   try {
     const category = new Category(req.body);
     await category.save();

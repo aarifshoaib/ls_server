@@ -70,8 +70,8 @@ const userSchema = new Schema<IUser>(
     role: {
       type: String,
       required: true,
-      enum: ['super_admin', 'admin', 'manager', 'sales', 'warehouse', 'delivery', 'accountant', 'viewer', 'hr_manager', 'payroll_officer'],
-      default: 'viewer',
+      enum: ['super_admin', 'admin', 'hod', 'accountant', 'supervisor', 'sales_team', 'delivery_team', 'hrm'],
+      default: 'sales_team',
       index: true,
     },
     permissions: [String],

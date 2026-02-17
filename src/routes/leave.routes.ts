@@ -20,9 +20,9 @@ router.post('/:id/approve', LeaveController.approve);
 router.post('/:id/reject', LeaveController.reject);
 
 // Admin/Manager routes
-router.get('/', requirePermission('leave.read'), LeaveController.getAll);
-router.get('/balance/:userId', requirePermission('leave.read'), LeaveController.getBalance);
-router.get('/:id', requirePermission('leave.read'), LeaveController.getById);
-router.put('/balance/:id', requirePermission('leave.update'), LeaveController.updateBalance);
+router.get('/', requirePermission('leave:read'), LeaveController.getAll);
+router.get('/balance/:userId', requirePermission('leave:read'), LeaveController.getBalance);
+router.get('/:id', requirePermission('leave:read'), LeaveController.getById);
+router.put('/balance/:id', requirePermission('leave:update'), LeaveController.updateBalance);
 
 export default router;

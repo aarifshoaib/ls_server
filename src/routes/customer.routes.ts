@@ -7,12 +7,12 @@ const router = Router();
 
 router.use(authMiddleware);
 
-router.get('/', requirePermission('customers.read'), CustomerController.getAll);
+router.get('/', requirePermission('customers:read'), CustomerController.getAll);
 
-router.get('/:id', requirePermission('customers.read'), CustomerController.getById);
+router.get('/:id', requirePermission('customers:read'), CustomerController.getById);
 
-router.post('/', requirePermission('customers.create'), CustomerController.create);
+router.post('/', requirePermission('customers:create'), CustomerController.create);
 
-router.put('/:id', requirePermission('customers.update'), CustomerController.update);
+router.put('/:id', requirePermission('customers:update'), CustomerController.update);
 
 export default router;
