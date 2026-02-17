@@ -77,22 +77,29 @@ const roleSchema = new Schema<IRole>(
 
 // Available modules in the system
 export const MODULES = [
+  // OMS Modules
   'dashboard',
   'products',
   'categories',
-  'inventory',
-  'orders',
   'customers',
+  'orders',
+  'inventory',
   'payments',
-  'employees',
-  'payroll',
-  'advances',
-  'attendance',
   'reports',
-  'users',
-  'roles',
-  'settings',
+  // Payroll Modules
+  'employees',
+  'pay_cycles',
+  'attendance',
+  'holidays',
+  'advances',
+  'adhoc_items',
+  'payroll_process',
+  'payroll_runs',
+  'payroll_archives',
+  'payroll_reports',
+  // Settings Modules
   'lookup_values',
+  'users',
 ] as const;
 
 // Available actions per module
@@ -101,14 +108,7 @@ export const ACTIONS = [
   'read',
   'update',
   'delete',
-  'export',
-  'import',
-  'approve',
-  'manage_credit',
-  'view_financial',
-  'manage_inventory',
-  'process_payment',
-  'change_status',
+  'process',         // For payroll processing
 ] as const;
 
 const Role = mongoose.model<IRole>('Role', roleSchema);

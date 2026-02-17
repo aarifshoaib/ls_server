@@ -7,6 +7,6 @@ const router = Router();
 
 router.use(authMiddleware);
 
-router.get('/stats', requirePermission('dashboard.read'), DashboardController.getStats);
+router.get('/stats', requirePermission('dashboard:read'), DashboardController.getStats);
 
 export default router;

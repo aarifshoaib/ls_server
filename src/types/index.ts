@@ -48,7 +48,7 @@ export interface IUserPreferences {
   };
 }
 
-export type UserRole = 'super_admin' | 'admin' | 'manager' | 'sales' | 'warehouse' | 'delivery' | 'accountant' | 'viewer';
+export type UserRole = 'super_admin' | 'admin' | 'hod' | 'accountant' | 'supervisor' | 'sales_team' | 'delivery_team' | 'hrm';
 export type UserStatus = 'active' | 'inactive' | 'suspended';
 
 // Product Types

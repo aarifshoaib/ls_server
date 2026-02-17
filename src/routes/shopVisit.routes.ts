@@ -18,10 +18,10 @@ router.put('/:id', ShopVisitController.update);
 router.post('/:id/cancel', ShopVisitController.cancel);
 
 // Manager/Admin routes
-router.get('/', requirePermission('shop_visits.read'), ShopVisitController.getAll);
-router.get('/stats/:userId', requirePermission('shop_visits.read'), ShopVisitController.getStats);
-router.get('/nearby', requirePermission('shop_visits.read'), ShopVisitController.getNearby);
-router.get('/customer/:customerId', requirePermission('shop_visits.read'), ShopVisitController.getCustomerHistory);
-router.get('/:id', requirePermission('shop_visits.read'), ShopVisitController.getById);
+router.get('/', requirePermission('shop_visits:read'), ShopVisitController.getAll);
+router.get('/stats/:userId', requirePermission('shop_visits:read'), ShopVisitController.getStats);
+router.get('/nearby', requirePermission('shop_visits:read'), ShopVisitController.getNearby);
+router.get('/customer/:customerId', requirePermission('shop_visits:read'), ShopVisitController.getCustomerHistory);
+router.get('/:id', requirePermission('shop_visits:read'), ShopVisitController.getById);
 
 export default router;

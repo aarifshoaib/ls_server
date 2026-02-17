@@ -59,9 +59,19 @@ export class AuthController {
     try {
       const user = req.user;
 
+      // req.user is the Mongoose document fetched by the auth middleware; its
+      // permissions field only contains custom per-user overrides (usually empty).
+      // The full computed permissions are decoded from the JWT by the middleware
+      // and stored on req.permissions.  We merge them here so callers such as
+      // the BFF session endpoint always receive the correct permission list.
+      const userWithPermissions = {
+        ...user?.toObject(),
+        permissions: req.permissions || [],
+      };
+
       res.json({
         success: true,
-        data: user,
+        data: userWithPermissions,
       });
     } catch (error) {
       next(error);

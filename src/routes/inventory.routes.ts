@@ -7,10 +7,10 @@ const router = Router();
 
 router.use(authMiddleware);
 
-router.get('/summary', requirePermission('inventory.read'), InventoryController.getSummary);
+router.get('/summary', requirePermission('inventory:read'), InventoryController.getSummary);
 
-router.get('/transactions', requirePermission('inventory.read'), InventoryController.getTransactions);
+router.get('/transactions', requirePermission('inventory:read'), InventoryController.getTransactions);
 
-router.post('/adjust', requirePermission('inventory.manage_inventory'), InventoryController.adjust);
+router.post('/adjust', requirePermission('inventory:manage_inventory'), InventoryController.adjust);
 
 export default router;

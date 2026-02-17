@@ -7,17 +7,17 @@ const router = Router();
 
 router.use(authMiddleware);
 
-router.get('/', requirePermission('orders.read'), OrderController.getAll);
+router.get('/', requirePermission('orders:read'), OrderController.getAll);
 
-router.get('/:id', requirePermission('orders.read'), OrderController.getById);
+router.get('/:id', requirePermission('orders:read'), OrderController.getById);
 
-router.post('/', requirePermission('orders.create'), OrderController.create);
+router.post('/', requirePermission('orders:create'), OrderController.create);
 
-router.put('/:id/status', requirePermission('orders.change_status'), OrderController.updateStatus);
+router.put('/:id/status', requirePermission('orders:change_status'), OrderController.updateStatus);
 
 // PDF Export endpoints
-router.get('/:id/pdf', requirePermission('orders.read'), OrderController.downloadPDF);
+router.get('/:id/pdf', requirePermission('orders:read'), OrderController.downloadPDF);
 
-router.get('/:id/delivery-note', requirePermission('orders.read'), OrderController.downloadDeliveryNote);
+router.get('/:id/delivery-note', requirePermission('orders:read'), OrderController.downloadDeliveryNote);
 
 export default router;
