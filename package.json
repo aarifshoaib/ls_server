@@ -11,6 +11,7 @@
     "seed:roles": "ts-node src/scripts/seedRoles.ts",
     "seed:components": "ts-node src/scripts/seedComponents.ts",
     "seed:lookups": "ts-node src/scripts/seedLookupValues.ts",
+    "seed:order-approval": "ts-node src/scripts/seedOrderApprovalConfig.ts",
     "lint": "eslint . --ext .ts",
     "test": "jest"
   },

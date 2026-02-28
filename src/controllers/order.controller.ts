@@ -3,11 +3,37 @@ import { IAuthRequest } from '../types';
 import Order from '../models/Order';
 import Customer from '../models/Customer';
 import CustomerLedger from '../models/CustomerLedger';
+import ApprovalConfig from '../models/ApprovalConfig';
 import { errors } from '../utils/errors';
 import { parsePagination, buildPaginatedResponse, generateCode, addDays } from '../utils/helpers';
 import { InventoryService } from '../services/inventory.service';
 import { PDFService } from '../services/pdf.service';
 import mongoose from 'mongoose';
+import { UserRole } from '../types';
+
+const DEFAULT_ORDER_APPROVER_ROLES: UserRole[] = ['accountant', 'admin', 'super_admin', 'hod'];
+
+const normalizeOrderApproverRoles = (roles: string[]): UserRole[] => {
+  const allowed = new Set(DEFAULT_ORDER_APPROVER_ROLES);
+  return [...new Set(roles)]
+    .filter((role): role is UserRole => allowed.has(role as UserRole));
+};
+
+const resolveApproverRoles = (roles?: string[]): UserRole[] => {
+  const normalized = normalizeOrderApproverRoles(roles || []);
+  return normalized.length > 0 ? normalized : DEFAULT_ORDER_APPROVER_ROLES;
+};
+
+const getOrderApprovalConfig = async () => {
+  return ApprovalConfig.findOne({
+    type: 'custom',
+    isActive: true,
+    $or: [
+      { name: 'order_creation_approval' },
+      { 'metadata.module': 'orders' },
+    ],
+  }).lean();
+};
 
 export class OrderController {
   static async getAll(req: IAuthRequest, res: Response, next: NextFunction) {
@@ -53,6 +79,7 @@ export class OrderController {
   static async create(req: IAuthRequest, res: Response, next: NextFunction) {
     try {
       const userId = req.user?._id.toString() || '';
+      const userRole = req.user?.role as UserRole | undefined;
 
       // Get customer
       const customer = await Customer.findById(req.body.customerId);
@@ -88,6 +115,17 @@ export class OrderController {
 
       const grandTotal = subtotal - (req.body.itemDiscountTotal || 0) + taxTotal;
 
+      // Always require approval for sales_team regardless of config
+      const approvalRequired = userRole === 'sales_team';
+      
+      // Get approver roles from config, or use defaults
+      const approvalConfig = await getOrderApprovalConfig();
+      const approverRoles = resolveApproverRoles(
+        approvalConfig?.levels
+          ?.map((level) => level.approverRole)
+          .filter((role): role is string => Boolean(role))
+      );
+
       const orderData: any = {
         orderNumber,
         customerId: customer._id,
@@ -109,14 +147,29 @@ export class OrderController {
         balanceDue: grandTotal,
         billingAddress: req.body.billingAddress,
         shippingAddress: req.body.shippingAddress,
-        status: 'pending',
+        status: approvalRequired ? 'draft' : 'pending',
         statusHistory: [
           {
-            status: 'pending',
+            status: approvalRequired ? 'draft' : 'pending',
             timestamp: new Date(),
             updatedBy: userId,
+            notes: approvalRequired ? 'Order submitted for approval' : undefined,
           },
         ],
+        approval: approvalRequired
+          ? {
+              required: true,
+              status: 'pending',
+              approverRoles,
+              submittedAt: new Date(),
+              decisions: [],
+            }
+          : {
+              required: false,
+              status: 'not_required',
+              approverRoles: [],
+              decisions: [],
+            },
         createdBy: userId,
         updatedBy: userId,
       };
@@ -137,7 +190,176 @@ export class OrderController {
       res.status(201).json({
         success: true,
         data: order,
-        message: 'Order created successfully',
+        message: approvalRequired
+          ? 'Order submitted for approval successfully'
+          : 'Order created successfully',
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async getPendingApprovals(req: IAuthRequest, res: Response, next: NextFunction) {
+    try {
+      const userRole = req.user?.role as UserRole | undefined;
+
+      if (!userRole || !DEFAULT_ORDER_APPROVER_ROLES.includes(userRole)) {
+        throw errors.forbidden('view order approvals');
+      }
+
+      const { page, limit, skip } = parsePagination(req.query);
+      const filter = {
+        isDeleted: false,
+        status: 'draft',
+        'approval.required': true,
+        'approval.status': 'pending',
+      };
+
+      const [orders, total] = await Promise.all([
+        Order.find(filter)
+          .sort({ createdAt: -1 })
+          .skip(skip)
+          .limit(limit)
+          .populate('customerId', 'name customerCode')
+          .populate('createdBy', 'fullName role'),
+        Order.countDocuments(filter),
+      ]);
+
+      const result = buildPaginatedResponse(orders, total, page, limit);
+
+      res.json({ success: true, ...result });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async approveCreate(req: IAuthRequest, res: Response, next: NextFunction) {
+    try {
+      const userId = req.user?._id;
+      const userRole = req.user?.role as UserRole | undefined;
+
+      if (!userId || !userRole || !DEFAULT_ORDER_APPROVER_ROLES.includes(userRole)) {
+        throw errors.forbidden('approve order creation');
+      }
+
+      const order = await Order.findById(req.params.id);
+      if (!order) {
+        throw errors.notFound('Order');
+      }
+
+      if (!order.approval?.required || order.approval.status !== 'pending') {
+        throw errors.validation('Order does not have a pending approval request');
+      }
+
+      const approverRoles = resolveApproverRoles(order.approval.approverRoles as any);
+      if (!approverRoles.includes(userRole)) {
+        throw errors.forbidden('approve this order');
+      }
+
+      const alreadyDecided = order.approval.decisions?.some(
+        (decision: any) => decision.approverId?.toString() === userId.toString()
+      );
+
+      if (alreadyDecided) {
+        throw errors.validation('You have already submitted a decision for this order');
+      }
+
+      order.approval.decisions.push({
+        approverId: userId as any,
+        approverRole: userRole,
+        decision: 'approved',
+        notes: req.body.notes,
+        decidedAt: new Date(),
+      } as any);
+      order.approval.status = 'approved';
+      order.approval.approvedAt = new Date();
+      order.approval.approvedBy = userId as any;
+      order.approval.decisionNotes = req.body.notes;
+
+      order.status = 'pending';
+      order.statusHistory.push({
+        status: 'pending',
+        timestamp: new Date(),
+        updatedBy: userId as any,
+        notes: req.body.notes || 'Order approved for creation',
+      });
+      order.updatedBy = userId as any;
+
+      await order.save();
+
+      res.json({
+        success: true,
+        data: order,
+        message: 'Order approved and created successfully',
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async rejectCreate(req: IAuthRequest, res: Response, next: NextFunction) {
+    try {
+      const userId = req.user?._id;
+      const userRole = req.user?.role as UserRole | undefined;
+
+      if (!userId || !userRole || !DEFAULT_ORDER_APPROVER_ROLES.includes(userRole)) {
+        throw errors.forbidden('reject order creation');
+      }
+
+      const order = await Order.findById(req.params.id);
+      if (!order) {
+        throw errors.notFound('Order');
+      }
+
+      if (!order.approval?.required || order.approval.status !== 'pending') {
+        throw errors.validation('Order does not have a pending approval request');
+      }
+
+      const approverRoles = resolveApproverRoles(order.approval.approverRoles as any);
+      if (!approverRoles.includes(userRole)) {
+        throw errors.forbidden('reject this order');
+      }
+
+      const notes = req.body.notes;
+      if (!notes || !notes.trim()) {
+        throw errors.validation('Rejection notes are required');
+      }
+
+      const alreadyDecided = order.approval.decisions?.some(
+        (decision: any) => decision.approverId?.toString() === userId.toString()
+      );
+
+      if (alreadyDecided) {
+        throw errors.validation('You have already submitted a decision for this order');
+      }
+
+      order.approval.decisions.push({
+        approverId: userId as any,
+        approverRole: userRole,
+        decision: 'rejected',
+        notes,
+        decidedAt: new Date(),
+      } as any);
+      order.approval.status = 'rejected';
+      order.approval.rejectedAt = new Date();
+      order.approval.rejectedBy = userId as any;
+      order.approval.decisionNotes = notes;
+
+      order.status = 'cancelled';
+      order.statusHistory.push({
+        status: 'cancelled',
+        timestamp: new Date(),
+        updatedBy: userId as any,
+        notes: `Order creation rejected: ${notes}`,
+      });
+      order.updatedBy = userId as any;
+
+      await order.save();
+
+      res.json({
+        success: true,
+        data: order,
+        message: 'Order creation request rejected',
       });
     } catch (error) {
       next(error);

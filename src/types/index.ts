@@ -278,6 +278,7 @@ export interface IOrder extends Document {
   creditInfo?: IOrderCreditInfo;
   status: OrderStatus;
   statusHistory: IStatusHistory[];
+  approval?: IOrderApproval;
   fulfillment: IFulfillment;
   shipping?: IShipping;
   notes?: string;
@@ -367,6 +368,27 @@ export interface IStatusHistory {
   timestamp: Date;
   updatedBy?: Types.ObjectId;
   notes?: string;
+}
+
+export interface IOrderApprovalDecision {
+  approverId: Types.ObjectId;
+  approverRole: UserRole;
+  decision: 'approved' | 'rejected';
+  notes?: string;
+  decidedAt: Date;
+}
+
+export interface IOrderApproval {
+  required: boolean;
+  status: 'not_required' | 'pending' | 'approved' | 'rejected';
+  approverRoles: UserRole[];
+  submittedAt?: Date;
+  approvedAt?: Date;
+  approvedBy?: Types.ObjectId;
+  rejectedAt?: Date;
+  rejectedBy?: Types.ObjectId;
+  decisionNotes?: string;
+  decisions: IOrderApprovalDecision[];
 }
 
 export interface IFulfillment {

@@ -163,6 +163,64 @@ const statusHistorySchema = new Schema<IStatusHistory>(
   { _id: false }
 );
 
+const orderApprovalDecisionSchema = new Schema(
+  {
+    approverId: {
+      type: Schema.Types.ObjectId,
+      ref: 'User',
+      required: true,
+    },
+    approverRole: {
+      type: String,
+      required: true,
+    },
+    decision: {
+      type: String,
+      enum: ['approved', 'rejected'],
+      required: true,
+    },
+    notes: String,
+    decidedAt: {
+      type: Date,
+      default: Date.now,
+    },
+  },
+  { _id: false }
+);
+
+const orderApprovalSchema = new Schema(
+  {
+    required: {
+      type: Boolean,
+      default: false,
+    },
+    status: {
+      type: String,
+      enum: ['not_required', 'pending', 'approved', 'rejected'],
+      default: 'not_required',
+      index: true,
+    },
+    approverRoles: [String],
+    submittedAt: Date,
+    approvedAt: Date,
+    approvedBy: {
+      type: Schema.Types.ObjectId,
+      ref: 'User',
+    },
+    rejectedAt: Date,
+    rejectedBy: {
+      type: Schema.Types.ObjectId,
+      ref: 'User',
+    },
+    decisionNotes: String,
+    decisions: {
+      type: [orderApprovalDecisionSchema],
+      default: [],
+    },
+  },
+  { _id: false }
+);
+
 const fulfillmentSchema = new Schema<IFulfillment>(
   {
     warehouseId: {
@@ -322,6 +380,15 @@ const orderSchema = new Schema<IOrder>(
       index: true,
     },
     statusHistory: [statusHistorySchema],
+    approval: {
+      type: orderApprovalSchema,
+      default: {
+        required: false,
+        status: 'not_required',
+        approverRoles: [],
+        decisions: [],
+      },
+    },
     fulfillment: {
       type: fulfillmentSchema,
       default: {},
