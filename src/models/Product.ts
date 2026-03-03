@@ -88,6 +88,10 @@ const productVariantSchema = new Schema<IProductVariant>({
     unique: true,
     sparse: true,
   },
+  itemCode: {
+    type: String,
+    trim: true,
+  },
   salesUom: {
     unitLabel: {
       type: String,

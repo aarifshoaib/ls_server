@@ -34,6 +34,8 @@ const orderItemSchema = new Schema<IOrderItem>({
     type: String,
     required: true,
   },
+  barcode: String,
+  productCode: String,
   name: {
     type: String,
     required: true,
@@ -86,9 +88,23 @@ const orderItemSchema = new Schema<IOrderItem>({
     type: Boolean,
     default: false,
   },
+  batchId: {
+    type: Schema.Types.ObjectId,
+    ref: 'StockBatch',
+  },
+  batchNumber: String,
+  expiryDate: Date,
   inventoryTransactionId: {
     type: Schema.Types.ObjectId,
     ref: 'InventoryTransaction',
+  },
+  returnedQuantity: {
+    type: Number,
+    default: 0,
+  },
+  returnedQuantityPieces: {
+    type: Number,
+    default: 0,
   },
 });
 
@@ -357,6 +373,10 @@ const orderSchema = new Schema<IOrder>(
       type: Number,
       default: 0,
     },
+    returnCreditAmount: {
+      type: Number,
+      default: 0,
+    },
     payments: [paymentSchema],
     creditInfo: orderCreditInfoSchema,
     status: {
@@ -365,12 +385,14 @@ const orderSchema = new Schema<IOrder>(
         'draft',
         'pending',
         'confirmed',
+        'invoiced',
         'processing',
-        'picked',
         'packed',
+        'picked',
+        'ready_to_deliver',
         'ready_to_ship',
-        'shipped',
         'out_for_delivery',
+        'shipped',
         'delivered',
         'cancelled',
         'returned',
@@ -398,6 +420,14 @@ const orderSchema = new Schema<IOrder>(
     internalNotes: String,
     tags: [String],
     linkedOrders: [linkedOrderSchema],
+    batchSelections: [{
+      productId: { type: Schema.Types.ObjectId, ref: 'Product' },
+      variantId: Schema.Types.ObjectId,
+      allocations: [{
+        batchId: { type: Schema.Types.ObjectId, ref: 'StockBatch' },
+        quantity: { type: Number, required: true, min: 1 },
+      }],
+    }],
     assignedTo: {
       type: Schema.Types.ObjectId,
       ref: 'User',

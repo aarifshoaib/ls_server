@@ -12,6 +12,11 @@
     "seed:components": "ts-node src/scripts/seedComponents.ts",
     "seed:lookups": "ts-node src/scripts/seedLookupValues.ts",
     "seed:order-approval": "ts-node src/scripts/seedOrderApprovalConfig.ts",
+    "seed:requisition-approval": "ts-node src/scripts/seedRequisitionApprovalConfig.ts",
+    "seed:po-approval": "ts-node src/scripts/seedPurchaseOrderApprovalConfig.ts",
+    "seed:pi-approval": "ts-node src/scripts/seedPurchaseInvoiceApprovalConfig.ts",
+    "cleanup:products": "ts-node src/scripts/cleanupProducts.ts",
+    "migrate:stock-to-pieces": "ts-node src/scripts/migrateStockToPieces.ts",
     "lint": "eslint . --ext .ts",
     "test": "jest"
   },

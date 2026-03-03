@@ -14,7 +14,7 @@ async function seedOrderApprovalConfig() {
       description: 'Sales orders require approval before creation',
       isActive: true,
       applicableFor: {
-        roles: ['sales_team'],
+        roles: [], // empty = all roles require approval
       },
       levels: [
         {

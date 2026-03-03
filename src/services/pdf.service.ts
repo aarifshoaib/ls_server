@@ -204,10 +204,15 @@ export class PDFService {
   }
 
   private static generateItemsTable(doc: PDFKit.PDFDocument, order: IOrder) {
+    const hasReturns = order.items?.some((i: any) => (i.returnedQuantityPieces ?? i.returnedQuantity ?? 0) > 0);
     const tableTop = 360;
-    const tableHeaders = ['#', 'Description', 'SKU', 'Qty', 'Unit Price', 'Tax', 'Total'];
-    const columnWidths = [25, 150, 80, 40, 70, 60, 70];
-    const columnPositions = [50, 75, 225, 305, 345, 415, 475];
+    const tableHeaders = hasReturns
+      ? ['#', 'Description', 'SKU', 'Qty', 'Returned', 'Unit Price', 'Tax', 'Total']
+      : ['#', 'Description', 'SKU', 'Qty', 'Unit Price', 'Tax', 'Total'];
+    const columnWidths = hasReturns ? [25, 130, 70, 35, 45, 65, 55, 70] : [25, 150, 80, 40, 70, 60, 70];
+    const columnPositions = hasReturns
+      ? [50, 75, 205, 275, 310, 355, 420, 475]
+      : [50, 75, 225, 305, 345, 415, 475];
 
     // Table header background
     doc.rect(50, tableTop, 495, 25)
@@ -231,13 +236,11 @@ export class PDFService {
     doc.font('Helvetica').fillColor('#333');
 
     order.items.forEach((item: any, index: number) => {
-      // Check if we need a new page
       if (rowTop > 700) {
         doc.addPage();
         rowTop = 50;
       }
 
-      // Alternate row background
       if (index % 2 === 1) {
         doc.rect(50, rowTop - 5, 495, 25)
            .fillColor('#f5f5f5')
@@ -250,14 +253,23 @@ export class PDFService {
       doc.text(`${item.name}\n${item.variantName} (${item.displaySize})`, columnPositions[1], rowTop, { width: columnWidths[1] });
       doc.text(item.variantSku, columnPositions[2], rowTop, { width: columnWidths[2] });
       doc.text(item.quantity.toString(), columnPositions[3], rowTop, { width: columnWidths[3], align: 'right' });
-      doc.text(`AED ${item.unitPrice.toFixed(2)}`, columnPositions[4], rowTop, { width: columnWidths[4], align: 'right' });
-      doc.text(`AED ${item.taxAmount.toFixed(2)}`, columnPositions[5], rowTop, { width: columnWidths[5], align: 'right' });
-      doc.text(`AED ${item.lineTotal.toFixed(2)}`, columnPositions[6], rowTop, { width: columnWidths[6], align: 'right' });
+      if (hasReturns) {
+        const rp = item.returnedQuantityPieces ?? item.returnedQuantity ?? 0;
+        const ppu = Math.max(1, item.pcsPerUnit || 1);
+        const retStr = rp > 0 && ppu > 1 ? `${Math.floor(rp / ppu)}u ${rp % ppu}p` : String(rp);
+        doc.text(retStr, columnPositions[4], rowTop, { width: columnWidths[4], align: 'right' });
+        doc.text(`AED ${item.unitPrice.toFixed(2)}`, columnPositions[5], rowTop, { width: columnWidths[5], align: 'right' });
+        doc.text(`AED ${item.taxAmount.toFixed(2)}`, columnPositions[6], rowTop, { width: columnWidths[6], align: 'right' });
+        doc.text(`AED ${item.lineTotal.toFixed(2)}`, columnPositions[7], rowTop, { width: columnWidths[7], align: 'right' });
+      } else {
+        doc.text(`AED ${item.unitPrice.toFixed(2)}`, columnPositions[4], rowTop, { width: columnWidths[4], align: 'right' });
+        doc.text(`AED ${item.taxAmount.toFixed(2)}`, columnPositions[5], rowTop, { width: columnWidths[5], align: 'right' });
+        doc.text(`AED ${item.lineTotal.toFixed(2)}`, columnPositions[6], rowTop, { width: columnWidths[6], align: 'right' });
+      }
 
       rowTop += 30;
     });
 
-    // Table border
     doc.rect(50, tableTop, 495, rowTop - tableTop)
        .strokeColor('#ddd')
        .lineWidth(1)
@@ -332,8 +344,14 @@ export class PDFService {
     // Totals box
     const boxX = 350;
     const boxWidth = 195;
+    const returnedCreditCalc = order.items?.reduce((sum: number, i: any) => {
+      const rp = i.returnedQuantityPieces ?? 0;
+      const totalPieces = i.sellBy === 'unit' ? (i.quantity || 0) * Math.max(1, i.pcsPerUnit || 1) : (i.quantity || 0);
+      return sum + (rp > 0 && totalPieces > 0 ? (rp / totalPieces) * (i.lineTotal || 0) : 0);
+    }, 0) || 0;
+    const boxHeight = 120 + (returnedCreditCalc > 0 ? 25 : 0) + (order.paidAmount > 0 && order.balanceDue > 0 ? 45 : 0);
 
-    doc.rect(boxX, totalsTop, boxWidth, 120)
+    doc.rect(boxX, totalsTop, boxWidth, Math.max(120, boxHeight))
        .strokeColor('#ddd')
        .lineWidth(1)
        .stroke();
@@ -366,6 +384,16 @@ export class PDFService {
 
       y += 20;
     });
+
+    // Credit for returned items
+    if (returnedCreditCalc > 0) {
+      doc.fontSize(10)
+         .font('Helvetica')
+         .fillColor('#1976d2')
+         .text('Credit (Returned):', boxX + 10, y)
+         .text(`- AED ${returnedCreditCalc.toFixed(2)}`, boxX + 100, y, { width: 85, align: 'right' });
+      y += 20;
+    }
 
     // Payment info if partially paid
     if (order.paidAmount > 0 && order.balanceDue > 0) {

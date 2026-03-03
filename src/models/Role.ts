@@ -86,6 +86,11 @@ export const MODULES = [
   'inventory',
   'payments',
   'reports',
+  // Procurement
+  'vendors',
+  'requisitions',
+  'purchase_orders',
+  'purchase_invoices',
   // Payroll Modules
   'employees',
   'pay_cycles',

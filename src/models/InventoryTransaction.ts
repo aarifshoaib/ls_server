@@ -14,6 +14,11 @@ const inventoryTransactionSchema = new Schema<IInventoryTransaction>(
       required: true,
       index: true,
     },
+    batchId: {
+      type: Schema.Types.ObjectId,
+      ref: 'StockBatch',
+      index: true,
+    },
     variantSku: {
       type: String,
       required: true,

@@ -98,6 +98,7 @@ export interface IProductVariant {
   unit: string;
   displaySize: string;
   barcode?: string;
+  itemCode?: string;
   salesUom?: {
     unitLabel?: string;
     pcsPerUnit?: number;
@@ -146,6 +147,7 @@ export type VariantStatus = 'active' | 'inactive' | 'discontinued';
 export interface ICategory extends Document {
   _id: Types.ObjectId;
   name: string;
+  code?: string;
   nameAr?: string;
   slug: string;
   description?: string;
@@ -255,6 +257,184 @@ export type CustomerStatus = 'active' | 'inactive' | 'blocked';
 export type CreditStatus = 'active' | 'suspended' | 'blocked';
 export type RiskCategory = 'low' | 'medium' | 'high';
 
+// Vendor Types (suppliers for procurement)
+export interface IVendor extends Document {
+  _id: Types.ObjectId;
+  vendorCode: string;
+  name: string;
+  companyName?: string;
+  contactPerson?: string;
+  email?: string;
+  phone: string;
+  alternatePhone?: string;
+  taxId?: string;
+  addresses: IVendorAddress[];
+  paymentTermsDays: number;
+  status: VendorStatus;
+  notes?: string;
+  createdBy?: Types.ObjectId;
+  updatedBy?: Types.ObjectId;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface IVendorAddress {
+  _id?: Types.ObjectId;
+  type: 'billing' | 'delivery';
+  label?: string;
+  addressLine1: string;
+  addressLine2?: string;
+  city: string;
+  state?: string;
+  country: string;
+  postalCode?: string;
+  isDefault: boolean;
+  contactPerson?: string;
+  contactPhone?: string;
+}
+
+export type VendorStatus = 'active' | 'inactive';
+
+// Requisition Types (input for Purchase Order)
+export interface IRequisition extends Document {
+  _id: Types.ObjectId;
+  requisitionNumber: string;
+  status: RequisitionStatus;
+  items: IRequisitionItem[];
+  approval?: IRequisitionApproval;
+  requestedBy: Types.ObjectId;
+  submittedAt?: Date;
+  createdBy?: Types.ObjectId;
+  updatedBy?: Types.ObjectId;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface IRequisitionItem {
+  productId: Types.ObjectId;
+  variantId: Types.ObjectId;
+  sku: string;
+  variantSku: string;
+  productName: string;
+  variantName: string;
+  displaySize: string;
+  quantity: number;
+  reason?: string;
+}
+
+export interface IRequisitionApproval {
+  required: boolean;
+  status: 'not_required' | 'pending' | 'approved' | 'rejected';
+  approverRoles: string[];
+  submittedAt?: Date;
+  approvedAt?: Date;
+  approvedBy?: Types.ObjectId;
+  rejectedAt?: Date;
+  rejectedBy?: Types.ObjectId;
+  decisionNotes?: string;
+  decisions?: Array<{
+    approverId: Types.ObjectId;
+    approverRole: string;
+    decision: 'approved' | 'rejected';
+    notes?: string;
+    decidedAt: Date;
+  }>;
+}
+
+export type RequisitionStatus = 'draft' | 'pending_approval' | 'approved' | 'rejected';
+
+// Purchase Order Types
+export interface IPurchaseOrder extends Document {
+  _id: Types.ObjectId;
+  purchaseOrderNumber: string;
+  requisitionId: Types.ObjectId;
+  vendorId: Types.ObjectId;
+  vendorName: string;
+  vendorCode: string;
+  status: PurchaseOrderStatus;
+  items: IPurchaseOrderItem[];
+  pricing: IPurchaseOrderPricing;
+  approval?: IRequisitionApproval;
+  notes?: string;
+  createdBy?: Types.ObjectId;
+  updatedBy?: Types.ObjectId;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface IPurchaseOrderItem {
+  productId: Types.ObjectId;
+  variantId: Types.ObjectId;
+  sku: string;
+  variantSku: string;
+  productName: string;
+  variantName: string;
+  displaySize: string;
+  quantity: number;
+  receivedQuantity: number;
+  unitPrice: number;
+  taxRate: number;
+  taxAmount: number;
+  lineTotal: number;
+}
+
+export interface IPurchaseOrderPricing {
+  subtotal: number;
+  taxTotal: number;
+  grandTotal: number;
+}
+
+export type PurchaseOrderStatus = 'draft' | 'pending_approval' | 'approved' | 'rejected' | 'sent' | 'partially_received' | 'received' | 'cancelled';
+
+// Purchase Invoice Types
+export interface IPurchaseInvoice extends Document {
+  _id: Types.ObjectId;
+  invoiceNumber: string;
+  purchaseOrderIds: Types.ObjectId[];
+  vendorId: Types.ObjectId;
+  vendorName: string;
+  vendorCode: string;
+  status: PurchaseInvoiceStatus;
+  items: IPurchaseInvoiceItem[];
+  pricing: IPurchaseInvoicePricing;
+  approval?: IRequisitionApproval;
+  receivedAt: Date;
+  notes?: string;
+  createdBy?: Types.ObjectId;
+  updatedBy?: Types.ObjectId;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface IPurchaseInvoiceItem {
+  productId: Types.ObjectId;
+  variantId: Types.ObjectId;
+  sku: string;
+  variantSku: string;
+  productName: string;
+  variantName: string;
+  displaySize: string;
+  quantity: number;
+  batchNumber: string;
+  expiryDate: Date;
+  isMatched: boolean;
+  purchaseOrderId?: Types.ObjectId;
+  purchaseOrderLineRef?: string;
+  unitPrice: number;
+  taxRate: number;
+  taxAmount: number;
+  lineTotal: number;
+  matchReason?: string;
+}
+
+export interface IPurchaseInvoicePricing {
+  subtotal: number;
+  taxTotal: number;
+  grandTotal: number;
+}
+
+export type PurchaseInvoiceStatus = 'draft' | 'pending_approval' | 'approved' | 'rejected' | 'received' | 'cancelled';
+
 // Order Types
 export interface IOrder extends Document {
   _id: Types.ObjectId;
@@ -274,6 +454,7 @@ export interface IOrder extends Document {
   paymentMethod: PaymentMethod;
   paidAmount: number;
   balanceDue: number;
+  returnCreditAmount?: number;
   payments: IPayment[];
   creditInfo?: IOrderCreditInfo;
   status: OrderStatus;
@@ -285,6 +466,7 @@ export interface IOrder extends Document {
   internalNotes?: string;
   tags: string[];
   linkedOrders: ILinkedOrder[];
+  batchSelections?: Array<{ productId: Types.ObjectId; variantId: Types.ObjectId; allocations: Array<{ batchId: Types.ObjectId; quantity: number }> }>;
   assignedTo?: Types.ObjectId;
   createdBy?: Types.ObjectId;
   updatedBy?: Types.ObjectId;
@@ -313,6 +495,8 @@ export interface IOrderItem {
   variantId: Types.ObjectId;
   sku: string;
   variantSku: string;
+  barcode?: string;
+  productCode?: string;
   name: string;
   variantName: string;
   displaySize: string;
@@ -326,7 +510,12 @@ export interface IOrderItem {
   taxAmount: number;
   lineTotal: number;
   inventoryDeducted: boolean;
+  batchId?: Types.ObjectId;
+  batchNumber?: string;
+  expiryDate?: Date;
   inventoryTransactionId?: Types.ObjectId;
+  returnedQuantity?: number;
+  returnedQuantityPieces?: number;
 }
 
 export interface IOrderPricing {
@@ -432,11 +621,10 @@ export type OrderStatus =
   | 'draft'
   | 'pending'
   | 'confirmed'
-  | 'processing'
-  | 'picked'
+  | 'invoiced'
   | 'packed'
-  | 'ready_to_ship'
-  | 'shipped'
+  | 'picked'
+  | 'ready_to_deliver'
   | 'out_for_delivery'
   | 'delivered'
   | 'cancelled'
@@ -487,13 +675,55 @@ export interface IPaymentDetails {
   }[];
 }
 
+export interface IPaymentRequest {
+  _id: Types.ObjectId;
+  customerId: Types.ObjectId;
+  orderId?: Types.ObjectId;
+  amount: number;
+  method: string;
+  reference?: string;
+  bankName?: string;
+  cardLast4?: string;
+  status: 'pending_approval' | 'approved' | 'rejected';
+  requestedBy: Types.ObjectId;
+  requestedAt: Date;
+  approvedBy?: Types.ObjectId;
+  approvedAt?: Date;
+  rejectionReason?: string;
+  notes?: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 export type LedgerTransactionType = 'invoice' | 'payment' | 'credit_note' | 'debit_note' | 'adjustment';
 
 // Inventory Transaction Types
+// Stock Batch - batch-level inventory with expiry (for PI receipts)
+export interface IStockBatch extends Document {
+  _id: Types.ObjectId;
+  productId: Types.ObjectId;
+  variantId: Types.ObjectId;
+  variantSku: string;
+  batchNumber: string;
+  expiryDate: Date;
+  quantity: number;
+  reservedQuantity: number;
+  availableQuantity: number;
+  sourceReferenceType: 'PurchaseInvoice';
+  sourceReferenceId: Types.ObjectId;
+  sourceReferenceNumber?: string;
+  receivedAt: Date;
+  isExpired: boolean;
+  createdBy?: Types.ObjectId;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 export interface IInventoryTransaction extends Document {
   _id: Types.ObjectId;
   productId: Types.ObjectId;
   variantId: Types.ObjectId;
+  batchId?: Types.ObjectId;
   variantSku: string;
   transactionType: InventoryTransactionType;
   quantity: number;
