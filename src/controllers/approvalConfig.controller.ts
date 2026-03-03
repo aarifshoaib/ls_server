@@ -3,7 +3,7 @@ import { IAuthRequest } from '../types';
 import ApprovalConfig from '../models/ApprovalConfig';
 import { errors } from '../utils/errors';
 
-const PROCUREMENT_MODULES = ['requisitions', 'purchase_orders', 'purchase_invoices'];
+const PROCUREMENT_MODULES = ['requisitions', 'purchase_orders', 'purchase_invoices', 'purchase_returns'];
 
 export class ApprovalConfigController {
   static async getProcurementConfigs(_req: IAuthRequest, res: Response, next: NextFunction) {
@@ -14,6 +14,7 @@ export class ApprovalConfigController {
           { name: 'requisition_approval' },
           { name: 'purchase_order_approval' },
           { name: 'purchase_invoice_approval' },
+          { name: 'purchase_return_approval' },
           { 'metadata.module': { $in: PROCUREMENT_MODULES } },
         ],
       }).lean();
@@ -22,6 +23,7 @@ export class ApprovalConfigController {
         requisitions: configs.find((c: any) => c.name === 'requisition_approval' || c.metadata?.module === 'requisitions'),
         purchase_orders: configs.find((c: any) => c.name === 'purchase_order_approval' || c.metadata?.module === 'purchase_orders'),
         purchase_invoices: configs.find((c: any) => c.name === 'purchase_invoice_approval' || c.metadata?.module === 'purchase_invoices'),
+        purchase_returns: configs.find((c: any) => c.name === 'purchase_return_approval' || c.metadata?.module === 'purchase_returns'),
       };
 
       res.json({ success: true, data: byModule });

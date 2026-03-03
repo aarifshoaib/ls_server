@@ -1,13 +1,13 @@
 import { Response, NextFunction } from 'express';
 import { IAuthRequest } from '../types';
-import { PurchaseOrderService } from '../services/purchaseOrder.service';
+import { PurchaseReturnService } from '../services/purchaseReturn.service';
 import { parsePagination } from '../utils/helpers';
 
-export class PurchaseOrderController {
+export class PurchaseReturnController {
   static async getAll(req: IAuthRequest, res: Response, next: NextFunction) {
     try {
       const { page, limit, skip } = parsePagination(req.query);
-      const result = await PurchaseOrderService.getAll(req.query as Record<string, unknown>, { page, limit, skip });
+      const result = await PurchaseReturnService.getAll(req.query as Record<string, unknown>, { page, limit, skip });
       res.json({ success: true, ...result });
     } catch (error) {
       next(error);
@@ -16,8 +16,8 @@ export class PurchaseOrderController {
 
   static async getById(req: IAuthRequest, res: Response, next: NextFunction) {
     try {
-      const po = await PurchaseOrderService.getById(req.params.id);
-      res.json({ success: true, data: po });
+      const pr = await PurchaseReturnService.getById(req.params.id);
+      res.json({ success: true, data: pr });
     } catch (error) {
       next(error);
     }
@@ -26,11 +26,25 @@ export class PurchaseOrderController {
   static async create(req: IAuthRequest, res: Response, next: NextFunction) {
     try {
       const userId = req.user?._id?.toString() || '';
-      const po = await PurchaseOrderService.create(req.body, userId);
+      const pr = await PurchaseReturnService.create(req.body, userId);
       res.status(201).json({
         success: true,
-        data: po,
-        message: 'Purchase Order created successfully',
+        data: pr,
+        message: 'Purchase Return created successfully',
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async update(req: IAuthRequest, res: Response, next: NextFunction) {
+    try {
+      const userId = req.user?._id?.toString() || '';
+      const pr = await PurchaseReturnService.update(req.params.id, req.body, userId);
+      res.json({
+        success: true,
+        data: pr,
+        message: 'Purchase Return updated successfully',
       });
     } catch (error) {
       next(error);
@@ -40,21 +54,10 @@ export class PurchaseOrderController {
   static async delete(req: IAuthRequest, res: Response, next: NextFunction) {
     try {
       const userId = req.user?._id?.toString() || '';
-      await PurchaseOrderService.delete(req.params.id, userId);
-      res.json({ success: true, message: 'Purchase Order deleted' });
-    } catch (error) {
-      next(error);
-    }
-  }
-
-  static async update(req: IAuthRequest, res: Response, next: NextFunction) {
-    try {
-      const userId = req.user?._id?.toString() || '';
-      const po = await PurchaseOrderService.update(req.params.id, req.body, userId);
+      await PurchaseReturnService.delete(req.params.id, userId);
       res.json({
         success: true,
-        data: po,
-        message: 'Purchase Order updated successfully',
+        message: 'Purchase Return deleted',
       });
     } catch (error) {
       next(error);
@@ -64,13 +67,13 @@ export class PurchaseOrderController {
   static async submit(req: IAuthRequest, res: Response, next: NextFunction) {
     try {
       const userId = req.user?._id?.toString() || '';
-      const po = await PurchaseOrderService.submit(req.params.id, userId);
+      const pr = await PurchaseReturnService.submit(req.params.id, userId);
       res.json({
         success: true,
-        data: po,
-        message: po.status === 'approved'
-          ? 'Purchase Order submitted and approved'
-          : 'Purchase Order submitted for approval',
+        data: pr,
+        message: pr.status === 'approved'
+          ? 'Purchase Return submitted - inventory deducted'
+          : 'Purchase Return submitted for approval',
       });
     } catch (error) {
       next(error);
@@ -81,11 +84,11 @@ export class PurchaseOrderController {
     try {
       const userId = req.user?._id?.toString() || '';
       const userRole = req.user?.role as string;
-      const po = await PurchaseOrderService.approve(req.params.id, userId, userRole, req.body.notes);
+      const pr = await PurchaseReturnService.approve(req.params.id, userId, userRole, req.body.notes);
       res.json({
         success: true,
-        data: po,
-        message: 'Purchase Order approved successfully',
+        data: pr,
+        message: 'Purchase Return approved - inventory deducted',
       });
     } catch (error) {
       next(error);
@@ -101,11 +104,11 @@ export class PurchaseOrderController {
       }
       const userId = req.user?._id?.toString() || '';
       const userRole = req.user?.role as string;
-      const po = await PurchaseOrderService.reject(req.params.id, userId, userRole, notes);
+      const pr = await PurchaseReturnService.reject(req.params.id, userId, userRole, notes);
       res.json({
         success: true,
-        data: po,
-        message: 'Purchase Order rejected',
+        data: pr,
+        message: 'Purchase Return rejected',
       });
     } catch (error) {
       next(error);
@@ -115,7 +118,7 @@ export class PurchaseOrderController {
   static async getPendingApprovals(req: IAuthRequest, res: Response, next: NextFunction) {
     try {
       const { page, limit, skip } = parsePagination(req.query);
-      const result = await PurchaseOrderService.getPendingApprovals({ page, limit, skip });
+      const result = await PurchaseReturnService.getPendingApprovals({ page, limit, skip });
       res.json({ success: true, ...result });
     } catch (error) {
       next(error);

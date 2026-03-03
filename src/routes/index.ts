@@ -7,6 +7,7 @@ import vendorRoutes from './vendor.routes';
 import requisitionRoutes from './requisition.routes';
 import purchaseOrderRoutes from './purchaseOrder.routes';
 import purchaseInvoiceRoutes from './purchaseInvoice.routes';
+import purchaseReturnRoutes from './purchaseReturn.routes';
 import { OrderController } from '../controllers/order.controller';
 import { PurchaseOrderController } from '../controllers/purchaseOrder.controller';
 import { PurchaseInvoiceController } from '../controllers/purchaseInvoice.controller';
@@ -64,6 +65,7 @@ router.get(
   PurchaseInvoiceController.getPendingApprovals
 );
 router.use('/purchase-invoices', purchaseInvoiceRoutes);
+router.use('/purchase-returns', purchaseReturnRoutes);
 router.use('/customers', customerRoutes);
 router.use('/inventory', inventoryRoutes);
 router.use('/dashboard', dashboardRoutes);

@@ -43,8 +43,10 @@ export class PaymentService {
         throw errors.notFound('Order');
       }
       const grandTotal = order.pricing?.grandTotal || 0;
+      const returnCredit = order.returnCreditAmount || 0;
+      const netTotal = Math.max(0, grandTotal - returnCredit);
       const currentPaid = order.paidAmount || 0;
-      const currentBalance = Math.max(0, grandTotal - currentPaid);
+      const currentBalance = Math.max(0, netTotal - currentPaid);
       const balanceCents = Math.round(currentBalance * 100);
       const paymentCents = Math.round(paymentAmount * 100);
       if (paymentCents > balanceCents) {
@@ -169,8 +171,10 @@ export class PaymentService {
           throw errors.notFound('Order');
         }
         const grandTotal = order.pricing?.grandTotal || 0;
+        const returnCredit = order.returnCreditAmount || 0;
+        const netTotal = Math.max(0, grandTotal - returnCredit);
         const currentPaid = order.paidAmount || 0;
-        const currentBalance = Math.max(0, grandTotal - currentPaid);
+        const currentBalance = Math.max(0, netTotal - currentPaid);
 
         // Use cents comparison to avoid floating-point precision errors (e.g. 123.45 vs 123.4499999)
         const balanceCents = Math.round(currentBalance * 100);
@@ -183,7 +187,7 @@ export class PaymentService {
 
         if (appliedAmount > 0) {
           const newPaidAmount = currentPaid + appliedAmount;
-          const newBalance = Math.max(0, grandTotal - newPaidAmount);
+          const newBalance = Math.max(0, netTotal - newPaidAmount);
 
           order.paidAmount = newPaidAmount;
           order.balanceDue = newBalance;
@@ -220,13 +224,15 @@ export class PaymentService {
         for (const openOrder of openOrders) {
           if (remainingAmount <= 0) break;
           const grandTotal = openOrder.pricing?.grandTotal || 0;
+          const returnCredit = openOrder.returnCreditAmount || 0;
+          const netTotal = Math.max(0, grandTotal - returnCredit);
           const currentPaid = openOrder.paidAmount || 0;
-          const currentBalance = Math.max(0, grandTotal - currentPaid);
+          const currentBalance = Math.max(0, netTotal - currentPaid);
           const appliedAmount = Math.min(currentBalance, remainingAmount);
 
           if (appliedAmount > 0) {
             const newPaidAmount = currentPaid + appliedAmount;
-            const newBalance = Math.max(0, grandTotal - newPaidAmount);
+            const newBalance = Math.max(0, netTotal - newPaidAmount);
 
             openOrder.paidAmount = newPaidAmount;
             openOrder.balanceDue = newBalance;

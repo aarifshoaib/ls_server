@@ -12,6 +12,7 @@ router.get('/approvals/pending', requireRole('accountant', 'admin', 'super_admin
 router.get('/:id', requirePermission('purchase_orders:read'), PurchaseOrderController.getById);
 router.post('/', requirePermission('purchase_orders:create'), PurchaseOrderController.create);
 router.put('/:id', requirePermission('purchase_orders:update'), PurchaseOrderController.update);
+router.delete('/:id', requirePermission('purchase_orders:update'), PurchaseOrderController.delete);
 router.post('/:id/submit', requirePermission('purchase_orders:update'), PurchaseOrderController.submit);
 router.put('/:id/approve', requireRole('accountant', 'admin', 'super_admin', 'hod'), requirePermission('purchase_orders:update'), PurchaseOrderController.approve);
 router.put('/:id/reject', requireRole('accountant', 'admin', 'super_admin', 'hod'), requirePermission('purchase_orders:update'), PurchaseOrderController.reject);

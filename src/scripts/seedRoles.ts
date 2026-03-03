@@ -65,6 +65,7 @@ const rolesData: RoleDefinition[] = [
       requisitions: 'CRUD',
       purchase_orders: 'CRUD',
       purchase_invoices: 'CRUD',
+      purchase_returns: 'CRUD',
       // Payroll
       employees: 'CRU',
       pay_cycles: 'CRU',
@@ -100,6 +101,7 @@ const rolesData: RoleDefinition[] = [
       requisitions: 'CRUD',
       purchase_orders: 'CRUD',
       purchase_invoices: 'CRUD',
+      purchase_returns: 'CRUD',
       // Payroll
       employees: 'CRU',
       pay_cycles: 'CRU',
@@ -135,6 +137,7 @@ const rolesData: RoleDefinition[] = [
       requisitions: 'CRUD',
       purchase_orders: 'CRUD',
       purchase_invoices: 'CRUD',
+      purchase_returns: 'CRUD',
       // Payroll
       employees: 'R',
       pay_cycles: '-',
@@ -170,6 +173,7 @@ const rolesData: RoleDefinition[] = [
       requisitions: 'CRUD',
       purchase_orders: 'CRUD',
       purchase_invoices: 'CRUD',
+      purchase_returns: 'CRUD',
       // Payroll
       employees: 'R',
       pay_cycles: 'R',

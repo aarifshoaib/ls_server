@@ -11,6 +11,7 @@ const purchaseOrderItemSchema = new Schema<IPurchaseOrderItem>(
     variantName: { type: String, required: true },
     displaySize: { type: String, required: true },
     quantity: { type: Number, required: true, min: 1 },
+    quantityUom: { type: String, enum: ['unit', 'pcs'], default: 'unit' },
     receivedQuantity: { type: Number, default: 0 },
     unitPrice: { type: Number, required: true, default: 0 },
     taxRate: { type: Number, default: 0 },

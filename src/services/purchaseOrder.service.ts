@@ -70,7 +70,7 @@ export class PurchaseOrderService {
   }
 
   static async create(data: { requisitionId: string; vendorId: string; items?: any[]; notes?: string }, userId: string) {
-    const requisition = await Requisition.findById(data.requisitionId);
+    const requisition = await Requisition.findById(data.requisitionId).lean();
     if (!requisition) throw errors.notFound('Requisition');
     if (requisition.status !== 'approved') {
       throw errors.validation('Requisition must be approved before creating Purchase Order');
@@ -90,9 +90,15 @@ export class PurchaseOrderService {
     const count = await PurchaseOrder.countDocuments();
     const purchaseOrderNumber = generateCode('PO', count + 1, 6);
 
-    const items = data.items && data.items.length > 0
-      ? data.items
-      : requisition.items.map((reqItem: any) => ({
+    let items: any[];
+    if (data.items && data.items.length > 0) {
+      items = data.items;
+    } else {
+      items = [];
+      for (const reqItem of requisition.items) {
+        const qty = reqItem.quantity;
+        const quantityUom = (reqItem.quantityUom || 'unit') as 'unit' | 'pcs';
+        items.push({
           productId: reqItem.productId,
           variantId: reqItem.variantId,
           sku: reqItem.sku,
@@ -100,28 +106,26 @@ export class PurchaseOrderService {
           productName: reqItem.productName,
           variantName: reqItem.variantName,
           displaySize: reqItem.displaySize,
-          quantity: reqItem.quantity,
-          unitPrice: reqItem.unitPrice || 0,
-          taxRate: reqItem.taxRate ?? 5,
-        }));
+          quantity: qty,
+          quantityUom,
+          unitPrice: 0,
+          taxRate: 0,
+          taxAmount: 0,
+          lineTotal: 0,
+        });
+      }
+    }
 
-    const enrichedItems = items.map((item: any) => {
-      const unitPrice = item.unitPrice ?? 0;
-      const taxRate = item.taxRate ?? 5;
-      const lineSubtotal = unitPrice * item.quantity;
-      const taxAmount = (lineSubtotal * taxRate) / 100;
-      const lineTotal = lineSubtotal + taxAmount;
-      return {
-        ...item,
-        receivedQuantity: 0,
-        taxAmount,
-        lineTotal,
-      };
-    });
+    const enrichedItems = items.map((item: any) => ({
+      ...item,
+      receivedQuantity: 0,
+      taxAmount: 0,
+      lineTotal: 0,
+    }));
 
-    const subtotal = enrichedItems.reduce((sum: number, i: any) => sum + (i.unitPrice * i.quantity), 0);
-    const taxTotal = enrichedItems.reduce((sum: number, i: any) => sum + i.taxAmount, 0);
-    const grandTotal = subtotal + taxTotal;
+    const subtotal = 0;
+    const taxTotal = 0;
+    const grandTotal = 0;
 
     const po = new PurchaseOrder({
       purchaseOrderNumber,
@@ -140,6 +144,15 @@ export class PurchaseOrderService {
     return po;
   }
 
+  static async delete(id: string, _userId: string) {
+    const po = await PurchaseOrder.findById(id);
+    if (!po) throw errors.notFound('Purchase Order');
+    if (po.status !== 'draft') {
+      throw errors.validation('Can only delete draft Purchase Orders');
+    }
+    await PurchaseOrder.findByIdAndDelete(id);
+  }
+
   static async update(id: string, data: { items?: any[]; notes?: string }, userId: string) {
     const po = await PurchaseOrder.findById(id);
     if (!po) throw errors.notFound('Purchase Order');
@@ -148,25 +161,16 @@ export class PurchaseOrderService {
     }
 
     if (data.items?.length) {
-      const enrichedItems = data.items.map((item: any) => {
-        const unitPrice = item.unitPrice ?? 0;
-        const taxRate = item.taxRate ?? 5;
-        const lineSubtotal = unitPrice * item.quantity;
-        const taxAmount = (lineSubtotal * taxRate) / 100;
-        const lineTotal = lineSubtotal + taxAmount;
-        return {
-          ...item,
-          receivedQuantity: item.receivedQuantity ?? 0,
-          taxAmount,
-          lineTotal,
-        };
-      });
+      const enrichedItems = data.items.map((item: any) => ({
+        ...item,
+        receivedQuantity: item.receivedQuantity ?? 0,
+        unitPrice: 0,
+        taxRate: 0,
+        taxAmount: 0,
+        lineTotal: 0,
+      }));
       po.items = enrichedItems;
-      po.pricing = {
-        subtotal: enrichedItems.reduce((s: number, i: any) => s + (i.unitPrice * i.quantity), 0),
-        taxTotal: enrichedItems.reduce((s: number, i: any) => s + i.taxAmount, 0),
-        grandTotal: enrichedItems.reduce((s: number, i: any) => s + i.lineTotal, 0),
-      };
+      po.pricing = { subtotal: 0, taxTotal: 0, grandTotal: 0 };
     }
     if (data.notes !== undefined) po.notes = data.notes;
     (po as any).updatedBy = userId;

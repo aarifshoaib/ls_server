@@ -191,10 +191,10 @@ export class OrderController {
         balanceDue: grandTotal,
         billingAddress: req.body.billingAddress,
         shippingAddress: req.body.shippingAddress,
-        status: approvalRequired ? 'draft' : 'pending',
+        status: approvalRequired ? 'draft' : 'confirmed',
         statusHistory: [
           {
-            status: approvalRequired ? 'draft' : 'pending',
+            status: approvalRequired ? 'draft' : 'confirmed',
             timestamp: new Date(),
             updatedBy: userId,
             notes: approvalRequired ? 'Order submitted for approval' : undefined,
@@ -230,7 +230,25 @@ export class OrderController {
       }
 
       const order = new Order(orderData);
-      await order.save();
+
+      if (!approvalRequired) {
+        const session = await mongoose.startSession();
+        session.startTransaction();
+        try {
+          await order.save({ session });
+          const batchSelections = (req.body.batchSelections || order.batchSelections) as any[] | undefined;
+          await InventoryService.deductInventoryForOrder(order, session, userId, batchSelections);
+          await order.save({ session });
+          await session.commitTransaction();
+        } catch (err) {
+          await session.abortTransaction();
+          throw err;
+        } finally {
+          session.endSession();
+        }
+      } else {
+        await order.save();
+      }
 
       res.status(201).json({
         success: true,
@@ -324,9 +342,9 @@ export class OrderController {
       order.approval.approvedBy = userId as any;
       order.approval.decisionNotes = req.body.notes;
 
-      order.status = 'pending';
+      order.status = 'confirmed';
       order.statusHistory.push({
-        status: 'pending',
+        status: 'confirmed',
         timestamp: new Date(),
         updatedBy: userId as any,
         notes: req.body.notes || 'Order approved for creation',

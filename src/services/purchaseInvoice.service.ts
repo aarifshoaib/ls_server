@@ -2,6 +2,7 @@ import mongoose, { Types } from 'mongoose';
 import PurchaseInvoice from '../models/PurchaseInvoice';
 import PurchaseOrder from '../models/PurchaseOrder';
 import Vendor from '../models/Vendor';
+import Product from '../models/Product';
 import ApprovalConfig from '../models/ApprovalConfig';
 import { StockBatchService } from './stockBatch.service';
 import { errors } from '../utils/errors';
@@ -91,6 +92,16 @@ export class PurchaseInvoiceService {
     const count = await PurchaseInvoice.countDocuments();
     const invoiceNumber = generateCode('PI', count + 1, 6);
 
+    const productIds = [...new Set(data.items.map((i: any) => i.productId?.toString()).filter(Boolean))];
+    const products = await Product.find({ _id: { $in: productIds } }).select('variants');
+    const pcsPerUnitMap = new Map<string, number>();
+    for (const p of products) {
+      for (const v of (p.variants as any[]) || []) {
+        const key = `${p._id}:${v._id}`;
+        pcsPerUnitMap.set(key, Math.max(1, v.salesUom?.pcsPerUnit || 1));
+      }
+    }
+
     const items = data.items.map((item: any) => {
       const batchNumber = (item.batchNumber || '').toString().trim();
       const expiryDate = item.expiryDate ? new Date(item.expiryDate) : null;
@@ -100,13 +111,17 @@ export class PurchaseInvoiceService {
       if (!expiryDate || isNaN(expiryDate.getTime())) {
         throw errors.validation(`Valid expiry date is required for ${item.productName || 'item'}`);
       }
+      const receiveUom = item.receiveUom || 'unit';
+      const ppu = pcsPerUnitMap.get(`${item.productId}:${item.variantId}`) || 1;
+      const qtyInUnits = receiveUom === 'pcs' ? (item.quantity || 0) / ppu : (item.quantity || 0);
       const unitPrice = item.unitPrice ?? 0;
       const taxRate = item.taxRate ?? 5;
-      const lineSubtotal = unitPrice * item.quantity;
+      const lineSubtotal = unitPrice * qtyInUnits;
       const taxAmount = (lineSubtotal * taxRate) / 100;
       const lineTotal = lineSubtotal + taxAmount;
       return {
         ...item,
+        receiveUom,
         batchNumber,
         expiryDate,
         unitPrice,
@@ -116,7 +131,12 @@ export class PurchaseInvoiceService {
       };
     });
 
-    const subtotal = items.reduce((s: number, i: any) => s + (i.unitPrice * i.quantity), 0);
+    const subtotal = items.reduce((s: number, i: any) => {
+      const receiveUom = i.receiveUom || 'unit';
+      const ppu = pcsPerUnitMap.get(`${i.productId}:${i.variantId}`) || 1;
+      const qtyInUnits = receiveUom === 'pcs' ? (i.quantity || 0) / ppu : (i.quantity || 0);
+      return s + (i.unitPrice * qtyInUnits);
+    }, 0);
     const taxTotal = items.reduce((s: number, i: any) => s + i.taxAmount, 0);
     const grandTotal = subtotal + taxTotal;
 
@@ -146,6 +166,14 @@ export class PurchaseInvoiceService {
     }
 
     if (data.items?.length) {
+      const productIds = [...new Set(data.items.map((i: any) => i.productId?.toString()).filter(Boolean))];
+      const products = await Product.find({ _id: { $in: productIds } }).select('variants');
+      const pcsPerUnitMap = new Map<string, number>();
+      for (const p of products) {
+        for (const v of (p.variants as any[]) || []) {
+          pcsPerUnitMap.set(`${p._id}:${v._id}`, Math.max(1, v.salesUom?.pcsPerUnit || 1));
+        }
+      }
       const items = data.items.map((item: any) => {
         const batchNumber = (item.batchNumber || '').toString().trim();
         const expiryDate = item.expiryDate ? new Date(item.expiryDate) : null;
@@ -155,16 +183,24 @@ export class PurchaseInvoiceService {
         if (!expiryDate || isNaN(expiryDate.getTime())) {
           throw errors.validation(`Valid expiry date is required for ${item.productName || 'item'}`);
         }
+        const receiveUom = item.receiveUom || 'unit';
+        const ppu = pcsPerUnitMap.get(`${item.productId}:${item.variantId}`) || 1;
+        const qtyInUnits = receiveUom === 'pcs' ? (item.quantity || 0) / ppu : (item.quantity || 0);
         const unitPrice = item.unitPrice ?? 0;
         const taxRate = item.taxRate ?? 5;
-        const lineSubtotal = unitPrice * item.quantity;
+        const lineSubtotal = unitPrice * qtyInUnits;
         const taxAmount = (lineSubtotal * taxRate) / 100;
         const lineTotal = lineSubtotal + taxAmount;
-        return { ...item, batchNumber, expiryDate, unitPrice, taxRate, taxAmount, lineTotal };
+        return { ...item, receiveUom, batchNumber, expiryDate, unitPrice, taxRate, taxAmount, lineTotal };
       });
       pi.items = items;
       pi.pricing = {
-        subtotal: items.reduce((s: number, i: any) => s + (i.unitPrice * i.quantity), 0),
+        subtotal: items.reduce((s: number, i: any) => {
+          const receiveUom = i.receiveUom || 'unit';
+          const ppu = pcsPerUnitMap.get(`${i.productId}:${i.variantId}`) || 1;
+          const qtyInUnits = receiveUom === 'pcs' ? (i.quantity || 0) / ppu : (i.quantity || 0);
+          return s + (i.unitPrice * qtyInUnits);
+        }, 0),
         taxTotal: items.reduce((s: number, i: any) => s + i.taxAmount, 0),
         grandTotal: items.reduce((s: number, i: any) => s + i.lineTotal, 0),
       };
@@ -289,6 +325,15 @@ export class PurchaseInvoiceService {
     session.startTransaction();
 
     try {
+      const productIds = [...new Set(pi.items.map((i: any) => i.productId?.toString()).filter(Boolean))];
+      const products = await Product.find({ _id: { $in: productIds } }).select('variants').session(session);
+      const pcsPerUnitMap = new Map<string, number>();
+      for (const p of products) {
+        for (const v of (p.variants as any[]) || []) {
+          pcsPerUnitMap.set(`${p._id}:${v._id}`, Math.max(1, v.salesUom?.pcsPerUnit || 1));
+        }
+      }
+
       for (const item of pi.items) {
         const batchNumber = (item.batchNumber || '').toString().trim();
         const expiryDate = item.expiryDate ? new Date(item.expiryDate) : null;
@@ -298,6 +343,7 @@ export class PurchaseInvoiceService {
         if (!expiryDate || isNaN(expiryDate.getTime())) {
           throw errors.validation(`Valid expiry date missing for ${item.productName || 'item'} - cannot receive into inventory`);
         }
+        const receiveUom = (item as any).receiveUom || 'unit';
         await StockBatchService.addStockFromPurchase(
           item.productId as Types.ObjectId,
           item.variantId as Types.ObjectId,
@@ -308,8 +354,12 @@ export class PurchaseInvoiceService {
           pi._id as Types.ObjectId,
           pi.invoiceNumber,
           userId,
-          session
+          session,
+          receiveUom
         );
+
+        const ppu = pcsPerUnitMap.get(`${item.productId}:${item.variantId}`) || 1;
+        const qtyInUnits = receiveUom === 'pcs' ? (item.quantity || 0) / ppu : (item.quantity || 0);
 
         if (item.purchaseOrderId) {
           const po = await PurchaseOrder.findById(item.purchaseOrderId).session(session);
@@ -321,7 +371,7 @@ export class PurchaseInvoiceService {
             );
             if (line) {
               const currentReceived = line.receivedQuantity || 0;
-              line.receivedQuantity = currentReceived + item.quantity;
+              line.receivedQuantity = currentReceived + qtyInUnits;
             }
             const allReceived = po.items.every((l: any) => (l.receivedQuantity || 0) >= l.quantity);
             po.status = allReceived ? 'received' : 'partially_received';
@@ -344,6 +394,15 @@ export class PurchaseInvoiceService {
     } finally {
       session.endSession();
     }
+  }
+
+  static async delete(id: string, _userId: string) {
+    const pi = await PurchaseInvoice.findById(id);
+    if (!pi) throw errors.notFound('Purchase Invoice');
+    if (pi.status !== 'draft') {
+      throw errors.validation('Can only delete draft Purchase Invoices');
+    }
+    await PurchaseInvoice.findByIdAndDelete(id);
   }
 
   static async getPendingApprovals(pagination: { page: number; limit: number; skip: number }) {

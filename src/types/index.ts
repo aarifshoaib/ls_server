@@ -319,6 +319,7 @@ export interface IRequisitionItem {
   variantName: string;
   displaySize: string;
   quantity: number;
+  quantityUom?: 'unit' | 'pcs';
   reason?: string;
 }
 
@@ -371,6 +372,7 @@ export interface IPurchaseOrderItem {
   variantName: string;
   displaySize: string;
   quantity: number;
+  quantityUom?: 'unit' | 'pcs';
   receivedQuantity: number;
   unitPrice: number;
   taxRate: number;
@@ -415,6 +417,7 @@ export interface IPurchaseInvoiceItem {
   variantName: string;
   displaySize: string;
   quantity: number;
+  receiveUom?: 'unit' | 'pcs';
   batchNumber: string;
   expiryDate: Date;
   isMatched: boolean;
@@ -434,6 +437,42 @@ export interface IPurchaseInvoicePricing {
 }
 
 export type PurchaseInvoiceStatus = 'draft' | 'pending_approval' | 'approved' | 'rejected' | 'received' | 'cancelled';
+
+// Purchase Return Types (return goods to vendor)
+export interface IPurchaseReturn extends Document {
+  _id: Types.ObjectId;
+  returnNumber: string;
+  vendorId: Types.ObjectId;
+  vendorName: string;
+  vendorCode: string;
+  status: PurchaseReturnStatus;
+  items: IPurchaseReturnItem[];
+  approval?: IRequisitionApproval;
+  notes?: string;
+  submittedAt?: Date;
+  createdBy?: Types.ObjectId;
+  updatedBy?: Types.ObjectId;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface IPurchaseReturnItem {
+  productId: Types.ObjectId;
+  variantId: Types.ObjectId;
+  sku: string;
+  variantSku: string;
+  productName: string;
+  variantName: string;
+  displaySize: string;
+  quantity: number;
+  returnUom: 'unit' | 'pcs';
+  batchId: Types.ObjectId;
+  batchNumber: string;
+  expiryDate: Date;
+  reason?: string;
+}
+
+export type PurchaseReturnStatus = 'draft' | 'pending_approval' | 'approved' | 'rejected' | 'completed' | 'cancelled';
 
 // Order Types
 export interface IOrder extends Document {
@@ -744,6 +783,7 @@ export type InventoryTransactionType =
   | 'sale'
   | 'adjustment'
   | 'return'
+  | 'purchase_return'
   | 'transfer'
   | 'damage';
 

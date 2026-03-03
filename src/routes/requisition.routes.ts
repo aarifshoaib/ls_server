@@ -12,6 +12,7 @@ router.get('/approvals/pending', requireRole('accountant', 'admin', 'super_admin
 router.get('/:id', requirePermission('requisitions:read'), RequisitionController.getById);
 router.post('/', requirePermission('requisitions:create'), RequisitionController.create);
 router.put('/:id', requirePermission('requisitions:update'), RequisitionController.update);
+router.delete('/:id', requirePermission('requisitions:update'), RequisitionController.delete);
 router.post('/:id/submit', requirePermission('requisitions:update'), RequisitionController.submit);
 router.put('/:id/approve', requireRole('accountant', 'admin', 'super_admin', 'hod'), requirePermission('requisitions:update'), RequisitionController.approve);
 router.put('/:id/reject', requireRole('accountant', 'admin', 'super_admin', 'hod'), requirePermission('requisitions:update'), RequisitionController.reject);

@@ -37,6 +37,16 @@ export class RequisitionController {
     }
   }
 
+  static async delete(req: IAuthRequest, res: Response, next: NextFunction) {
+    try {
+      const userId = req.user?._id?.toString() || '';
+      await RequisitionService.delete(req.params.id, userId);
+      res.json({ success: true, message: 'Requisition deleted' });
+    } catch (error) {
+      next(error);
+    }
+  }
+
   static async update(req: IAuthRequest, res: Response, next: NextFunction) {
     try {
       const userId = req.user?._id?.toString() || '';

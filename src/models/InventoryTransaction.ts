@@ -25,7 +25,7 @@ const inventoryTransactionSchema = new Schema<IInventoryTransaction>(
     },
     transactionType: {
       type: String,
-      enum: ['purchase', 'sale', 'adjustment', 'return', 'transfer', 'damage'],
+      enum: ['purchase', 'sale', 'adjustment', 'return', 'purchase_return', 'transfer', 'damage'],
       required: true,
       index: true,
     },

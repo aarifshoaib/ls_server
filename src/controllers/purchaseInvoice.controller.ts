@@ -102,6 +102,19 @@ export class PurchaseInvoiceController {
     }
   }
 
+  static async delete(req: IAuthRequest, res: Response, next: NextFunction) {
+    try {
+      const userId = req.user?._id?.toString() || '';
+      await PurchaseInvoiceService.delete(req.params.id, userId);
+      res.json({
+        success: true,
+        message: 'Purchase Invoice deleted',
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
   static async receive(req: IAuthRequest, res: Response, next: NextFunction) {
     try {
       const userId = req.user?._id?.toString() || '';

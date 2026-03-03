@@ -76,6 +76,15 @@ export class RequisitionService {
     return requisition;
   }
 
+  static async delete(id: string, _userId: string) {
+    const requisition = await Requisition.findById(id);
+    if (!requisition) throw errors.notFound('Requisition');
+    if (requisition.status !== 'draft') {
+      throw errors.validation('Can only delete draft requisitions');
+    }
+    await Requisition.findByIdAndDelete(id);
+  }
+
   static async update(id: string, data: { items?: any[] }, userId: string) {
     const requisition = await Requisition.findById(id);
     if (!requisition) throw errors.notFound('Requisition');
@@ -236,6 +245,7 @@ export class RequisitionService {
         variantName: variant.name,
         displaySize: variant.displaySize,
         quantity: item.quantity,
+        quantityUom: item.quantityUom || 'unit',
         reason: item.reason,
       });
     }

@@ -12,6 +12,7 @@ router.get('/approvals/pending', requireRole('accountant', 'admin', 'super_admin
 router.get('/:id', requirePermission('purchase_invoices:read'), PurchaseInvoiceController.getById);
 router.post('/', requirePermission('purchase_invoices:create'), PurchaseInvoiceController.create);
 router.put('/:id', requirePermission('purchase_invoices:update'), PurchaseInvoiceController.update);
+router.delete('/:id', requirePermission('purchase_invoices:update'), PurchaseInvoiceController.delete);
 router.post('/:id/submit', requirePermission('purchase_invoices:update'), PurchaseInvoiceController.submit);
 router.put('/:id/approve', requireRole('accountant', 'admin', 'super_admin', 'hod'), requirePermission('purchase_invoices:update'), PurchaseInvoiceController.approve);
 router.put('/:id/reject', requireRole('accountant', 'admin', 'super_admin', 'hod'), requirePermission('purchase_invoices:update'), PurchaseInvoiceController.reject);

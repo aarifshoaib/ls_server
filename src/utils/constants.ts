@@ -238,6 +238,7 @@ export const INVENTORY_TRANSACTION_TYPES = {
   SALE: 'sale',
   ADJUSTMENT: 'adjustment',
   RETURN: 'return',
+  PURCHASE_RETURN: 'purchase_return',
   TRANSFER: 'transfer',
   DAMAGE: 'damage',
 } as const;

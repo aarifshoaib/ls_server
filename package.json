@@ -15,6 +15,7 @@
     "seed:requisition-approval": "ts-node src/scripts/seedRequisitionApprovalConfig.ts",
     "seed:po-approval": "ts-node src/scripts/seedPurchaseOrderApprovalConfig.ts",
     "seed:pi-approval": "ts-node src/scripts/seedPurchaseInvoiceApprovalConfig.ts",
+    "seed:pr-approval": "ts-node src/scripts/seedPurchaseReturnApprovalConfig.ts",
     "cleanup:products": "ts-node src/scripts/cleanupProducts.ts",
     "migrate:stock-to-pieces": "ts-node src/scripts/migrateStockToPieces.ts",
     "lint": "eslint . --ext .ts",

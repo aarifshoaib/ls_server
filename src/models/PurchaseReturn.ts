@@ -1,7 +1,7 @@
 import mongoose, { Schema } from 'mongoose';
-import { IPurchaseInvoice, IPurchaseInvoiceItem, IPurchaseInvoicePricing, IRequisitionApproval } from '../types';
+import { IPurchaseReturn, IPurchaseReturnItem, IRequisitionApproval } from '../types';
 
-const purchaseInvoiceItemSchema = new Schema<IPurchaseInvoiceItem>(
+const purchaseReturnItemSchema = new Schema<IPurchaseReturnItem>(
   {
     productId: { type: Schema.Types.ObjectId, ref: 'Product', required: true },
     variantId: { type: Schema.Types.ObjectId, required: true },
@@ -11,31 +11,16 @@ const purchaseInvoiceItemSchema = new Schema<IPurchaseInvoiceItem>(
     variantName: { type: String, required: true },
     displaySize: { type: String, required: true },
     quantity: { type: Number, required: true, min: 1 },
-    receiveUom: { type: String, enum: ['unit', 'pcs'], default: 'unit' },
+    returnUom: { type: String, enum: ['unit', 'pcs'], default: 'unit' },
+    batchId: { type: Schema.Types.ObjectId, ref: 'StockBatch', required: true },
     batchNumber: { type: String, required: true },
     expiryDate: { type: Date, required: true },
-    isMatched: { type: Boolean, required: true },
-    purchaseOrderId: { type: Schema.Types.ObjectId, ref: 'PurchaseOrder' },
-    purchaseOrderLineRef: String,
-    unitPrice: { type: Number, required: true },
-    taxRate: { type: Number, default: 0 },
-    taxAmount: { type: Number, default: 0 },
-    lineTotal: { type: Number, required: true },
-    matchReason: String,
+    reason: String,
   },
   { _id: false }
 );
 
-const purchaseInvoicePricingSchema = new Schema<IPurchaseInvoicePricing>(
-  {
-    subtotal: { type: Number, required: true },
-    taxTotal: { type: Number, default: 0 },
-    grandTotal: { type: Number, required: true },
-  },
-  { _id: false }
-);
-
-const piApprovalDecisionSchema = new Schema(
+const prApprovalDecisionSchema = new Schema(
   {
     approverId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     approverRole: { type: String, required: true },
@@ -46,7 +31,7 @@ const piApprovalDecisionSchema = new Schema(
   { _id: false }
 );
 
-const piApprovalSchema = new Schema<IRequisitionApproval>(
+const prApprovalSchema = new Schema<IRequisitionApproval>(
   {
     required: { type: Boolean, default: false },
     status: {
@@ -61,24 +46,19 @@ const piApprovalSchema = new Schema<IRequisitionApproval>(
     rejectedAt: Date,
     rejectedBy: { type: Schema.Types.ObjectId, ref: 'User' },
     decisionNotes: String,
-    decisions: [piApprovalDecisionSchema],
+    decisions: [prApprovalDecisionSchema],
   },
   { _id: false }
 );
 
-const purchaseInvoiceSchema = new Schema<IPurchaseInvoice>(
+const purchaseReturnSchema = new Schema<IPurchaseReturn>(
   {
-    invoiceNumber: {
+    returnNumber: {
       type: String,
       required: true,
       unique: true,
       index: true,
     },
-    purchaseOrderIds: [{
-      type: Schema.Types.ObjectId,
-      ref: 'PurchaseOrder',
-      index: true,
-    }],
     vendorId: {
       type: Schema.Types.ObjectId,
       ref: 'Vendor',
@@ -89,24 +69,20 @@ const purchaseInvoiceSchema = new Schema<IPurchaseInvoice>(
     vendorCode: { type: String, required: true },
     status: {
       type: String,
-      enum: ['draft', 'pending_approval', 'approved', 'rejected', 'received', 'cancelled'],
+      enum: ['draft', 'pending_approval', 'approved', 'rejected', 'completed', 'cancelled'],
       default: 'draft',
       index: true,
     },
     items: {
-      type: [purchaseInvoiceItemSchema],
+      type: [purchaseReturnItemSchema],
       required: true,
       validate: {
-        validator: (items: IPurchaseInvoiceItem[]) => items.length > 0,
+        validator: (items: IPurchaseReturnItem[]) => items.length > 0,
         message: 'At least one item is required',
       },
     },
-    pricing: {
-      type: purchaseInvoicePricingSchema,
-      required: true,
-    },
-    approval: piApprovalSchema,
-    receivedAt: { type: Date, default: Date.now },
+    approval: prApprovalSchema,
+    submittedAt: Date,
     notes: String,
     createdBy: { type: Schema.Types.ObjectId, ref: 'User' },
     updatedBy: { type: Schema.Types.ObjectId, ref: 'User' },
@@ -114,11 +90,10 @@ const purchaseInvoiceSchema = new Schema<IPurchaseInvoice>(
   { timestamps: true }
 );
 
-purchaseInvoiceSchema.index({ invoiceNumber: 1 });
-purchaseInvoiceSchema.index({ vendorId: 1 });
-purchaseInvoiceSchema.index({ status: 1 });
-purchaseInvoiceSchema.index({ purchaseOrderIds: 1 });
+purchaseReturnSchema.index({ returnNumber: 1 });
+purchaseReturnSchema.index({ vendorId: 1 });
+purchaseReturnSchema.index({ status: 1 });
 
-const PurchaseInvoice = mongoose.model<IPurchaseInvoice>('PurchaseInvoice', purchaseInvoiceSchema);
+const PurchaseReturn = mongoose.model<IPurchaseReturn>('PurchaseReturn', purchaseReturnSchema);
 
-export default PurchaseInvoice;
+export default PurchaseReturn;

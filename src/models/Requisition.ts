@@ -18,6 +18,7 @@ const requisitionItemSchema = new Schema<IRequisitionItem>(
     variantName: { type: String, required: true },
     displaySize: { type: String, required: true },
     quantity: { type: Number, required: true, min: 1 },
+    quantityUom: { type: String, enum: ['unit', 'pcs'], default: 'unit' },
     reason: String,
   },
   { _id: false }

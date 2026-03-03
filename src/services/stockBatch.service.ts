@@ -8,7 +8,7 @@ import { INVENTORY_TRANSACTION_TYPES } from '../utils/constants';
 export class StockBatchService {
   /**
    * Add stock from Purchase Invoice - creates batch(es) and updates variant stock.
-   * PI quantity is in UNITS; we convert to PIECES using pcsPerUnit for accurate unit+pc tracking.
+   * quantity + receiveUom: 'unit' => convert to pieces via pcsPerUnit; 'pcs' => use quantity as pieces.
    */
   static async addStockFromPurchase(
     productId: Types.ObjectId,
@@ -20,36 +20,57 @@ export class StockBatchService {
     sourceReferenceId: Types.ObjectId,
     sourceReferenceNumber: string,
     userId: string,
-    session: mongoose.ClientSession
+    session: mongoose.ClientSession,
+    receiveUom: 'unit' | 'pcs' = 'unit'
   ) {
     const now = new Date();
     const isExpired = expiryDate <= now;
 
-    // Convert PI quantity (units) to pieces using pcsPerUnit
     const product = await Product.findOne({ _id: productId }).session(session);
     if (!product) throw errors.notFound('Product');
     const variant = (product.variants as any).id(variantId);
     if (!variant) throw errors.notFound('Variant');
     const pcsPerUnit = Math.max(1, (variant as any).salesUom?.pcsPerUnit || 1);
-    const quantityInPieces = Math.round(quantity * pcsPerUnit);
+    const quantityInPieces = receiveUom === 'pcs'
+      ? Math.round(quantity)
+      : Math.round(quantity * pcsPerUnit);
 
-    const batch = new StockBatch({
+    let batch = await StockBatch.findOne({
       productId,
       variantId,
-      variantSku,
       batchNumber,
-      expiryDate,
-      quantity: quantityInPieces,
-      reservedQuantity: 0,
-      availableQuantity: quantityInPieces,
-      sourceReferenceType: 'PurchaseInvoice',
-      sourceReferenceId,
-      sourceReferenceNumber,
-      receivedAt: now,
-      isExpired,
-      createdBy: userId,
-    });
-    await batch.save({ session });
+    }).session(session);
+
+    if (batch) {
+      const existingExpiry = new Date(batch.expiryDate).toISOString().split('T')[0];
+      const newExpiry = new Date(expiryDate).toISOString().split('T')[0];
+      if (existingExpiry !== newExpiry) {
+        throw errors.validation(
+          `Batch ${batchNumber} already exists for this product/variant with expiry ${existingExpiry}. Use the same expiry date or a different batch number.`
+        );
+      }
+      batch.quantity += quantityInPieces;
+      batch.availableQuantity += quantityInPieces;
+      await batch.save({ session });
+    } else {
+      batch = new StockBatch({
+        productId,
+        variantId,
+        variantSku,
+        batchNumber,
+        expiryDate,
+        quantity: quantityInPieces,
+        reservedQuantity: 0,
+        availableQuantity: quantityInPieces,
+        sourceReferenceType: 'PurchaseInvoice',
+        sourceReferenceId,
+        sourceReferenceNumber,
+        receivedAt: now,
+        isExpired,
+        createdBy: userId,
+      });
+      await batch.save({ session });
+    }
 
     // Update variant-level stock on Product (in pieces)
     const previousQuantity = variant.stock.quantity;
@@ -161,6 +182,64 @@ export class StockBatchService {
       referenceType: 'Order',
       referenceId: orderId,
       referenceNumber: orderNumber,
+      performedBy: userId,
+      performedAt: new Date(),
+      metadata: { batchId: batch._id, batchNumber: batch.batchNumber },
+    });
+    await transaction.save({ session });
+
+    return { batch, transaction };
+  }
+
+  /**
+   * Deduct from batch for purchase return (returning goods to vendor)
+   */
+  static async deductFromBatchForPurchaseReturn(
+    batchId: string,
+    quantity: number,
+    purchaseReturnId: Types.ObjectId,
+    returnNumber: string,
+    userId: string,
+    session: mongoose.ClientSession
+  ) {
+    const batch = await StockBatch.findById(batchId).session(session);
+    if (!batch) throw errors.notFound('Stock batch');
+
+    if (batch.availableQuantity < quantity) {
+      throw errors.insufficientStock(
+        `Batch ${batch.batchNumber}`,
+        batch.availableQuantity,
+        quantity
+      );
+    }
+
+    batch.quantity -= quantity;
+    batch.availableQuantity -= quantity;
+    await batch.save({ session });
+
+    const product = await Product.findOne({ _id: batch.productId }).session(session);
+    if (!product) throw errors.notFound('Product');
+
+    const variant = (product.variants as any).id(batch.variantId);
+    if (!variant) throw errors.notFound('Variant');
+
+    const previousQuantity = variant.stock.quantity;
+    variant.stock.quantity -= quantity;
+    variant.stock.availableQuantity = variant.stock.quantity - (variant.stock.reservedQuantity || 0);
+    await product.save({ session });
+
+    const transaction = new InventoryTransaction({
+      productId: batch.productId,
+      variantId: batch.variantId,
+      batchId: batch._id,
+      variantSku: batch.variantSku,
+      transactionType: INVENTORY_TRANSACTION_TYPES.PURCHASE_RETURN,
+      quantity: -quantity,
+      previousQuantity,
+      newQuantity: variant.stock.quantity,
+      referenceType: 'PurchaseReturn',
+      referenceId: purchaseReturnId,
+      referenceNumber: returnNumber,
       performedBy: userId,
       performedAt: new Date(),
       metadata: { batchId: batch._id, batchNumber: batch.batchNumber },
