@@ -27,6 +27,8 @@ export class ProductService {
         { name: { $regex: query.search, $options: 'i' } },
         { sku: { $regex: query.search, $options: 'i' } },
         { 'variants.variantSku': { $regex: query.search, $options: 'i' } },
+        { 'variants.barcode': { $regex: query.search, $options: 'i' } },
+        { 'variants.itemCode': { $regex: query.search, $options: 'i' } },
       ];
     }
 

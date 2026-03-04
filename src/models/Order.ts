@@ -34,6 +34,8 @@ const orderItemSchema = new Schema<IOrderItem>({
     type: String,
     required: true,
   },
+  barcode: String,
+  productCode: String,
   name: {
     type: String,
     required: true,
@@ -86,9 +88,23 @@ const orderItemSchema = new Schema<IOrderItem>({
     type: Boolean,
     default: false,
   },
+  batchId: {
+    type: Schema.Types.ObjectId,
+    ref: 'StockBatch',
+  },
+  batchNumber: String,
+  expiryDate: Date,
   inventoryTransactionId: {
     type: Schema.Types.ObjectId,
     ref: 'InventoryTransaction',
+  },
+  returnedQuantity: {
+    type: Number,
+    default: 0,
+  },
+  returnedQuantityPieces: {
+    type: Number,
+    default: 0,
   },
 });
 
@@ -159,6 +175,64 @@ const statusHistorySchema = new Schema<IStatusHistory>(
       ref: 'User',
     },
     notes: String,
+  },
+  { _id: false }
+);
+
+const orderApprovalDecisionSchema = new Schema(
+  {
+    approverId: {
+      type: Schema.Types.ObjectId,
+      ref: 'User',
+      required: true,
+    },
+    approverRole: {
+      type: String,
+      required: true,
+    },
+    decision: {
+      type: String,
+      enum: ['approved', 'rejected'],
+      required: true,
+    },
+    notes: String,
+    decidedAt: {
+      type: Date,
+      default: Date.now,
+    },
+  },
+  { _id: false }
+);
+
+const orderApprovalSchema = new Schema(
+  {
+    required: {
+      type: Boolean,
+      default: false,
+    },
+    status: {
+      type: String,
+      enum: ['not_required', 'pending', 'approved', 'rejected'],
+      default: 'not_required',
+      index: true,
+    },
+    approverRoles: [String],
+    submittedAt: Date,
+    approvedAt: Date,
+    approvedBy: {
+      type: Schema.Types.ObjectId,
+      ref: 'User',
+    },
+    rejectedAt: Date,
+    rejectedBy: {
+      type: Schema.Types.ObjectId,
+      ref: 'User',
+    },
+    decisionNotes: String,
+    decisions: {
+      type: [orderApprovalDecisionSchema],
+      default: [],
+    },
   },
   { _id: false }
 );
@@ -299,6 +373,10 @@ const orderSchema = new Schema<IOrder>(
       type: Number,
       default: 0,
     },
+    returnCreditAmount: {
+      type: Number,
+      default: 0,
+    },
     payments: [paymentSchema],
     creditInfo: orderCreditInfoSchema,
     status: {
@@ -307,12 +385,14 @@ const orderSchema = new Schema<IOrder>(
         'draft',
         'pending',
         'confirmed',
+        'invoiced',
         'processing',
-        'picked',
         'packed',
+        'picked',
+        'ready_to_deliver',
         'ready_to_ship',
-        'shipped',
         'out_for_delivery',
+        'shipped',
         'delivered',
         'cancelled',
         'returned',
@@ -322,6 +402,15 @@ const orderSchema = new Schema<IOrder>(
       index: true,
     },
     statusHistory: [statusHistorySchema],
+    approval: {
+      type: orderApprovalSchema,
+      default: {
+        required: false,
+        status: 'not_required',
+        approverRoles: [],
+        decisions: [],
+      },
+    },
     fulfillment: {
       type: fulfillmentSchema,
       default: {},
@@ -331,6 +420,14 @@ const orderSchema = new Schema<IOrder>(
     internalNotes: String,
     tags: [String],
     linkedOrders: [linkedOrderSchema],
+    batchSelections: [{
+      productId: { type: Schema.Types.ObjectId, ref: 'Product' },
+      variantId: Schema.Types.ObjectId,
+      allocations: [{
+        batchId: { type: Schema.Types.ObjectId, ref: 'StockBatch' },
+        quantity: { type: Number, required: true, min: 1 },
+      }],
+    }],
     assignedTo: {
       type: Schema.Types.ObjectId,
       ref: 'User',

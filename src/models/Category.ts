@@ -8,6 +8,12 @@ const categorySchema = new Schema<ICategory>(
       required: true,
       trim: true,
     },
+    code: {
+      type: String,
+      trim: true,
+      sparse: true,
+      index: true,
+    },
     nameAr: {
       type: String,
       trim: true,

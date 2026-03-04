@@ -1,6 +1,7 @@
 import { Response, NextFunction } from 'express';
 import { IAuthRequest } from '../types';
 import { InventoryService } from '../services/inventory.service';
+import { StockBatchService } from '../services/stockBatch.service';
 
 export class InventoryController {
   static async getSummary(_req: IAuthRequest, res: Response, next: NextFunction) {
@@ -29,6 +30,26 @@ export class InventoryController {
       res.json({
         success: true,
         data: transactions,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async getBatchesByVariant(req: IAuthRequest, res: Response, next: NextFunction) {
+    try {
+      const { productId, variantId } = req.params;
+      const includeExpired = req.query.includeExpired === 'true';
+
+      const batches = await StockBatchService.getBatchesByVariant(
+        productId,
+        variantId,
+        includeExpired
+      );
+
+      res.json({
+        success: true,
+        data: batches,
       });
     } catch (error) {
       next(error);

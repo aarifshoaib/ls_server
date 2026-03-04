@@ -2,7 +2,8 @@ import { Types } from 'mongoose';
 import Employee from '../models/Employee';
 import User from '../models/User';
 import { errors } from '../utils/errors';
-import { parsePagination, buildPaginatedResponse, generateCode } from '../utils/helpers';
+import { parsePagination, buildPaginatedResponse } from '../utils/helpers';
+import { NumberingService } from '../services/numbering.service';
 import { IPaginationQuery } from '../types';
 
 export class EmployeeService {
@@ -120,18 +121,9 @@ export class EmployeeService {
     return employee; // Can be null
   }
 
-  // Generate next employee code
+  // Generate next employee code from numbering config
   static async generateEmployeeCode(): Promise<string> {
-    const lastEmployee = await Employee.findOne()
-      .sort({ employeeCode: -1 })
-      .select('employeeCode');
-
-    if (!lastEmployee) {
-      return 'EMP-00001';
-    }
-
-    const lastNumber = parseInt(lastEmployee.employeeCode.replace('EMP-', '')) || 0;
-    return generateCode('EMP', lastNumber + 1, 5);
+    return NumberingService.getNextCode('employee');
   }
 
   // Create employee

@@ -1,0 +1,341 @@
+{
+  "collections": [
+    {
+      "name": "products",
+      "description": "Product catalog with variants, pricing, stock. Use for: product search, stock balance, low stock, product details",
+      "fields": [
+        { "name": "_id", "type": "ObjectId" },
+        { "name": "sku", "type": "String" },
+        { "name": "name", "type": "String" },
+        { "name": "description", "type": "String" },
+        { "name": "category", "type": "Object", "fields": ["_id", "name", "path"] },
+        { "name": "brand", "type": "Object", "fields": ["_id", "name"] },
+        { "name": "variants", "type": "Array", "fields": ["_id", "variantSku", "name", "displaySize", "price", "stock"] },
+        { "name": "variants.stock.quantity", "type": "Number" },
+        { "name": "variants.stock.availableQuantity", "type": "Number" },
+        { "name": "variants.stock.reorderLevel", "type": "Number" },
+        { "name": "status", "type": "String", "enum": ["active", "inactive", "draft"] },
+        { "name": "createdAt", "type": "Date" }
+      ]
+    },
+    {
+      "name": "categories",
+      "description": "Product categories",
+      "fields": [
+        { "name": "_id", "type": "ObjectId" },
+        { "name": "name", "type": "String" },
+        { "name": "code", "type": "String" },
+        { "name": "path", "type": "String" },
+        { "name": "parent", "type": "ObjectId", "ref": "Category" },
+        { "name": "isActive", "type": "Boolean" }
+      ]
+    },
+    {
+      "name": "stockbatches",
+      "description": "Stock batches with expiry, quantity per product variant. Use for: batch expiry, stock by batch, expiring stock",
+      "fields": [
+        { "name": "_id", "type": "ObjectId" },
+        { "name": "productId", "type": "ObjectId", "ref": "Product" },
+        { "name": "variantId", "type": "ObjectId" },
+        { "name": "variantSku", "type": "String" },
+        { "name": "batchNumber", "type": "String" },
+        { "name": "expiryDate", "type": "Date" },
+        { "name": "quantity", "type": "Number" },
+        { "name": "availableQuantity", "type": "Number" },
+        { "name": "reservedQuantity", "type": "Number" },
+        { "name": "receivedAt", "type": "Date" },
+        { "name": "isExpired", "type": "Boolean" }
+      ]
+    },
+    {
+      "name": "inventorytransactions",
+      "description": "Inventory movement history - purchases, sales, adjustments",
+      "fields": [
+        { "name": "_id", "type": "ObjectId" },
+        { "name": "productId", "type": "ObjectId" },
+        { "name": "variantId", "type": "ObjectId" },
+        { "name": "transactionType", "type": "String", "enum": ["purchase", "sale", "adjustment", "return", "purchase_return", "transfer", "damage"] },
+        { "name": "quantity", "type": "Number" },
+        { "name": "referenceType", "type": "String" },
+        { "name": "referenceId", "type": "ObjectId" },
+        { "name": "batchId", "type": "ObjectId" },
+        { "name": "createdAt", "type": "Date" }
+      ]
+    },
+    {
+      "name": "orders",
+      "description": "Sales orders with customer, items, pricing. Use for: sales by period, order status, top customers by sales",
+      "fields": [
+        { "name": "_id", "type": "ObjectId" },
+        { "name": "orderNumber", "type": "String" },
+        { "name": "customerId", "type": "ObjectId", "ref": "Customer" },
+        { "name": "customerName", "type": "String" },
+        { "name": "customerCode", "type": "String" },
+        { "name": "items", "type": "Array", "fields": ["productId", "variantId", "sku", "name", "quantity", "unitPrice", "lineTotal"] },
+        { "name": "pricing.subtotal", "type": "Number" },
+        { "name": "pricing.grandTotal", "type": "Number" },
+        { "name": "status", "type": "String" },
+        { "name": "paymentStatus", "type": "String" },
+        { "name": "paidAmount", "type": "Number" },
+        { "name": "balanceDue", "type": "Number" },
+        { "name": "returnCreditAmount", "type": "Number" },
+        { "name": "createdAt", "type": "Date" }
+      ]
+    },
+    {
+      "name": "customers",
+      "description": "Customers with credit, contact, addresses. Use for: customer lookup, outstanding, credit limit, top customers",
+      "fields": [
+        { "name": "_id", "type": "ObjectId" },
+        { "name": "customerCode", "type": "String" },
+        { "name": "name", "type": "String" },
+        { "name": "companyName", "type": "String" },
+        { "name": "email", "type": "String" },
+        { "name": "phone", "type": "String" },
+        { "name": "contactPerson", "type": "String" },
+        { "name": "creditInfo.creditLimit", "type": "Number" },
+        { "name": "creditInfo.currentOutstanding", "type": "Number" },
+        { "name": "creditInfo.availableCredit", "type": "Number" },
+        { "name": "creditInfo.creditTermDays", "type": "Number" },
+        { "name": "creditInfo.creditStatus", "type": "String" },
+        { "name": "financialSummary.totalOrders", "type": "Number" },
+        { "name": "financialSummary.totalOrderValue", "type": "Number" },
+        { "name": "financialSummary.totalOutstanding", "type": "Number" },
+        { "name": "addresses", "type": "Array" },
+        { "name": "status", "type": "String" },
+        { "name": "createdAt", "type": "Date" }
+      ]
+    },
+    {
+      "name": "customerledgers",
+      "description": "Customer ledger - invoices, payments, credit notes",
+      "fields": [
+        { "name": "_id", "type": "ObjectId" },
+        { "name": "customerId", "type": "ObjectId" },
+        { "name": "transactionType", "type": "String", "enum": ["invoice", "payment", "credit_note", "debit_note", "adjustment"] },
+        { "name": "transactionDate", "type": "Date" },
+        { "name": "referenceNumber", "type": "String" },
+        { "name": "debitAmount", "type": "Number" },
+        { "name": "creditAmount", "type": "Number" },
+        { "name": "balanceAfter", "type": "Number" },
+        { "name": "description", "type": "String" }
+      ]
+    },
+    {
+      "name": "users",
+      "description": "System users. Use with employeeId to link to employees",
+      "fields": [
+        { "name": "_id", "type": "ObjectId" },
+        { "name": "employeeId", "type": "String" },
+        { "name": "email", "type": "String" },
+        { "name": "firstName", "type": "String" },
+        { "name": "lastName", "type": "String" },
+        { "name": "role", "type": "String" }
+      ]
+    },
+    {
+      "name": "employees",
+      "description": "Employee records. Use for: employee lookup, leave/attendance queries by employee",
+      "fields": [
+        { "name": "_id", "type": "ObjectId" },
+        { "name": "employeeCode", "type": "String" },
+        { "name": "userId", "type": "ObjectId", "ref": "User" },
+        { "name": "firstName", "type": "String" },
+        { "name": "lastName", "type": "String" },
+        { "name": "fullName", "type": "String" },
+        { "name": "email", "type": "String" },
+        { "name": "phone", "type": "String" },
+        { "name": "department", "type": "String" },
+        { "name": "designation", "type": "String" },
+        { "name": "status", "type": "String" }
+      ]
+    },
+    {
+      "name": "leaves",
+      "description": "Employee leave requests. Use for: who took leave, leave this week, pending leaves",
+      "fields": [
+        { "name": "_id", "type": "ObjectId" },
+        { "name": "userId", "type": "ObjectId", "ref": "User" },
+        { "name": "employeeId", "type": "String" },
+        { "name": "leaveType", "type": "String", "enum": ["annual", "sick", "casual", "unpaid", "maternity", "paternity", "emergency", "other"] },
+        { "name": "startDate", "type": "Date" },
+        { "name": "endDate", "type": "Date" },
+        { "name": "totalDays", "type": "Number" },
+        { "name": "reason", "type": "String" },
+        { "name": "status", "type": "String", "enum": ["pending", "approved", "rejected", "cancelled"] },
+        { "name": "createdAt", "type": "Date" }
+      ]
+    },
+    {
+      "name": "leavebalances",
+      "description": "Employee leave balance per year",
+      "fields": [
+        { "name": "_id", "type": "ObjectId" },
+        { "name": "userId", "type": "ObjectId" },
+        { "name": "year", "type": "Number" },
+        { "name": "leaveType", "type": "String" },
+        { "name": "entitled", "type": "Number" },
+        { "name": "taken", "type": "Number" },
+        { "name": "pending", "type": "Number" }
+      ]
+    },
+    {
+      "name": "attendances",
+      "description": "Employee attendance records. Use for: attendance this month, late arrivals, overtime",
+      "fields": [
+        { "name": "_id", "type": "ObjectId" },
+        { "name": "userId", "type": "ObjectId" },
+        { "name": "employeeId", "type": "String" },
+        { "name": "date", "type": "Date" },
+        { "name": "status", "type": "String", "enum": ["present", "half_day", "absent", "leave", "holiday", "weekend"] },
+        { "name": "workHours", "type": "Object", "fields": ["total", "overtime"] },
+        { "name": "isLate", "type": "Boolean" }
+      ]
+    },
+    {
+      "name": "shopvisits",
+      "description": "Salesman shop/customer visits. Use for: shop visits report, visits by salesman, visits this week",
+      "fields": [
+        { "name": "_id", "type": "ObjectId" },
+        { "name": "userId", "type": "ObjectId" },
+        { "name": "employeeId", "type": "String" },
+        { "name": "customerId", "type": "ObjectId" },
+        { "name": "customerName", "type": "String" },
+        { "name": "visitDate", "type": "Date" },
+        { "name": "checkIn", "type": "Object" },
+        { "name": "checkOut", "type": "Object" },
+        { "name": "activities", "type": "Array" }
+      ]
+    },
+    {
+      "name": "holidays",
+      "description": "Company holidays",
+      "fields": [
+        { "name": "_id", "type": "ObjectId" },
+        { "name": "date", "type": "Date" },
+        { "name": "name", "type": "String" },
+        { "name": "type", "type": "String" },
+        { "name": "isPaid", "type": "Boolean" }
+      ]
+    },
+    {
+      "name": "paycycles",
+      "description": "Payroll cycles",
+      "fields": [
+        { "name": "_id", "type": "ObjectId" },
+        { "name": "name", "type": "String" },
+        { "name": "startDate", "type": "Date" },
+        { "name": "endDate", "type": "Date" },
+        { "name": "paymentDate", "type": "Date" },
+        { "name": "status", "type": "String" }
+      ]
+    },
+    {
+      "name": "payrollruns",
+      "description": "Payroll run history",
+      "fields": [
+        { "name": "_id", "type": "ObjectId" },
+        { "name": "payCycleId", "type": "ObjectId" },
+        { "name": "runNumber", "type": "String" },
+        { "name": "status", "type": "String" },
+        { "name": "totalNetPay", "type": "Number" },
+        { "name": "processedAt", "type": "Date" }
+      ]
+    },
+    {
+      "name": "advances",
+      "description": "Employee salary advances",
+      "fields": [
+        { "name": "_id", "type": "ObjectId" },
+        { "name": "employeeId", "type": "ObjectId" },
+        { "name": "amount", "type": "Number" },
+        { "name": "reason", "type": "String" },
+        { "name": "status", "type": "String" },
+        { "name": "requestDate", "type": "Date" }
+      ]
+    },
+    {
+      "name": "vendors",
+      "description": "Vendors/suppliers for procurement",
+      "fields": [
+        { "name": "_id", "type": "ObjectId" },
+        { "name": "vendorCode", "type": "String" },
+        { "name": "name", "type": "String" },
+        { "name": "companyName", "type": "String" },
+        { "name": "email", "type": "String" },
+        { "name": "phone", "type": "String" },
+        { "name": "status", "type": "String" }
+      ]
+    },
+    {
+      "name": "requisitions",
+      "description": "Stock requisition requests",
+      "fields": [
+        { "name": "_id", "type": "ObjectId" },
+        { "name": "requisitionNumber", "type": "String" },
+        { "name": "status", "type": "String" },
+        { "name": "createdAt", "type": "Date" }
+      ]
+    },
+    {
+      "name": "purchaseorders",
+      "description": "Purchase orders",
+      "fields": [
+        { "name": "_id", "type": "ObjectId" },
+        { "name": "purchaseOrderNumber", "type": "String" },
+        { "name": "vendorId", "type": "ObjectId" },
+        { "name": "vendorName", "type": "String" },
+        { "name": "status", "type": "String" },
+        { "name": "pricing", "type": "Object", "fields": ["grandTotal"] },
+        { "name": "createdAt", "type": "Date" }
+      ]
+    },
+    {
+      "name": "purchaseinvoices",
+      "description": "Purchase invoices from vendors",
+      "fields": [
+        { "name": "_id", "type": "ObjectId" },
+        { "name": "invoiceNumber", "type": "String" },
+        { "name": "vendorId", "type": "ObjectId" },
+        { "name": "vendorName", "type": "String" },
+        { "name": "status", "type": "String" },
+        { "name": "pricing.grandTotal", "type": "Number" },
+        { "name": "receivedAt", "type": "Date" },
+        { "name": "createdAt", "type": "Date" }
+      ]
+    },
+    {
+      "name": "purchasereturns",
+      "description": "Purchase returns to vendors",
+      "fields": [
+        { "name": "_id", "type": "ObjectId" },
+        { "name": "returnNumber", "type": "String" },
+        { "name": "vendorId", "type": "ObjectId" },
+        { "name": "vendorName", "type": "String" },
+        { "name": "status", "type": "String" },
+        { "name": "createdAt", "type": "Date" }
+      ]
+    },
+    {
+      "name": "lookupvalues",
+      "description": "Lookup/master data - payment methods, order status, etc",
+      "fields": [
+        { "name": "_id", "type": "ObjectId" },
+        { "name": "category", "type": "String" },
+        { "name": "code", "type": "String" },
+        { "name": "name", "type": "String" }
+      ]
+    },
+    {
+      "name": "paymentrequests",
+      "description": "Payment requests pending approval",
+      "fields": [
+        { "name": "_id", "type": "ObjectId" },
+        { "name": "customerId", "type": "ObjectId" },
+        { "name": "amount", "type": "Number" },
+        { "name": "status", "type": "String" },
+        { "name": "requestedAt", "type": "Date" }
+      ]
+    }
+  ]
+}

@@ -7,15 +7,15 @@ const router = Router();
 
 router.use(authMiddleware);
 
-router.get('/', requirePermission('lookup_values:read'), LookupValueController.getAll);
+router.get('/', LookupValueController.getAll);
 
-router.get('/categories', requirePermission('lookup_values:read'), LookupValueController.getCategories);
+router.get('/categories', LookupValueController.getCategories);
 
-router.get('/category/:category', requirePermission('lookup_values:read'), LookupValueController.getByCategory);
+router.get('/category/:category', LookupValueController.getByCategory);
 
-router.get('/code/:category/:code', requirePermission('lookup_values:read'), LookupValueController.getByCode);
+router.get('/code/:category/:code', LookupValueController.getByCode);
 
-router.get('/:id', requirePermission('lookup_values:read'), LookupValueController.getById);
+router.get('/:id', LookupValueController.getById);
 
 router.post('/', requirePermission('lookup_values:create'), LookupValueController.create);
 
