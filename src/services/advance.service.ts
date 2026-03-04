@@ -4,6 +4,7 @@ import Employee from '../models/Employee';
 import { errors } from '../utils/errors';
 import { parsePagination, buildPaginatedResponse, addDays } from '../utils/helpers';
 import { IPaginationQuery } from '../types';
+import { NumberingService } from './numbering.service';
 
 export class AdvanceService {
   // Get all advances with pagination and filters
@@ -98,23 +99,9 @@ export class AdvanceService {
     return advances;
   }
 
-  // Generate next advance number
+  // Generate next advance number from numbering config
   static async generateAdvanceNumber(): Promise<string> {
-    const year = new Date().getFullYear();
-    const prefix = `ADV-${year}`;
-
-    const lastAdvance = await Advance.findOne({
-      advanceNumber: { $regex: `^${prefix}` },
-    })
-      .sort({ advanceNumber: -1 })
-      .select('advanceNumber');
-
-    if (!lastAdvance) {
-      return `${prefix}-00001`;
-    }
-
-    const lastNumber = parseInt(lastAdvance.advanceNumber.split('-').pop() || '0');
-    return `${prefix}-${String(lastNumber + 1).padStart(5, '0')}`;
+    return NumberingService.getNextCode('advance');
   }
 
   // Create advance request

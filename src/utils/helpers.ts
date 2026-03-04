@@ -30,6 +30,11 @@ export const roundToTwo = (num: number): number => {
   return Math.round(num * 100) / 100;
 };
 
+/** Round amount up to nearest 0.25 (e.g. 100.05 → 100.25, 100.37 → 100.50). */
+export const roundToNearestQuarter = (num: number): number => {
+  return Math.ceil(num * 4) / 4;
+};
+
 export const parsePagination = (query: IPaginationQuery) => {
   const page = Math.max(1, parseInt(String(query.page || DEFAULT_PAGINATION.PAGE)));
   const limit = Math.min(

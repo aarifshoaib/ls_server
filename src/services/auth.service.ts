@@ -40,27 +40,27 @@ export class AuthService {
 
   // Get user permissions based on role from database
   static async getUserPermissions(user: IUser): Promise<string[]> {
-    // If user has custom permissions, use those
-    if (user.permissions && user.permissions.length > 0) {
-      return user.permissions;
-    }
-
     // Fetch role from database
     const role = await Role.findOne({ name: user.role, isActive: true });
 
-    if (!role) {
-      return [];
+    // Build permissions array with format "module:action"
+    const rolePermissions: string[] = [];
+    if (role) {
+      role.permissions.forEach((modulePermission) => {
+        modulePermission.actions.forEach((action) => {
+          rolePermissions.push(`${modulePermission.module}:${action}`);
+        });
+      });
     }
 
-    // Build permissions array with format "module:action"
-    const permissions: string[] = [];
-    role.permissions.forEach((modulePermission) => {
-      modulePermission.actions.forEach((action) => {
-        permissions.push(`${modulePermission.module}:${action}`);
-      });
-    });
+    // Merge role + custom permissions (custom is additive, not replacement)
+    const customPermissions = user.permissions || [];
 
-    return permissions;
+    if (customPermissions.includes('*')) {
+      return ['*'];
+    }
+
+    return [...new Set([...rolePermissions, ...customPermissions])];
   }
 
   // Hash password

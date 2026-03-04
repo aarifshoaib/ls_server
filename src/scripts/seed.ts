@@ -815,7 +815,7 @@ async function seed() {
     // ========================================
     console.log('Creating sample orders...');
 
-    const orderStatuses = ['pending', 'confirmed', 'processing', 'shipped', 'delivered'];
+    const orderStatuses = ['pending', 'confirmed', 'invoiced', 'ready_to_deliver', 'delivered'];
     const orders: any[] = [];
     const inventoryTransactions: any[] = [];
     const stockAdjustments = new Map<string, { productId: any; variantId: any; quantity: number; variantSku: string }>();

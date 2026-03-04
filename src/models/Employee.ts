@@ -82,10 +82,12 @@ const employeeSchema = new Schema<IEmployee>(
       relationship: String,
       phone: String,
     },
-    // Home Country Contact
+    // Home Country Contact (UAE Contact = phone; Home Country Personal = personalPhone; Relative = relativeName/relativePhone)
     homeCountryContact: {
+      personalPhone: String,
       relativeName: String,
-      phone: String,
+      relativePhone: String,
+      phone: String, // legacy
     },
     // Identification Documents
     identifications: [{
@@ -99,6 +101,44 @@ const employeeSchema = new Schema<IEmployee>(
       issuingAuthority: String,
       attachmentUrl: String,
     }],
+    // Passport (single)
+    passport: {
+      number: String,
+      dateOfExpiry: Date,
+    },
+    // Visa history - add new when expired
+    visas: [{
+      visaNumber: String,
+      uid: String,
+      placeOfIssue: String,
+      dateOfIssue: Date,
+      dateOfExpiry: Date,
+      workPermitCode: String,
+      personalCode: String,
+      workPermitExpiryDate: Date,
+      status: { type: String, enum: ['active', 'expired'], default: 'active' },
+    }],
+    // Emirates ID history - add new when expired
+    emiratesIds: [{
+      eidaNumber: String,
+      dateOfIssue: Date,
+      dateOfExpiry: Date,
+      placeOfIssue: String,
+      status: { type: String, enum: ['active', 'expired'], default: 'active' },
+    }],
+    // Medical insurance history - add new when expired
+    medicalInsurances: [{
+      cardNumber: String,
+      beneficiaryId: String,
+      dateOfExpiry: Date,
+      status: { type: String, enum: ['active', 'expired'], default: 'active' },
+    }],
+    // Driving license
+    drivingLicense: {
+      number: String,
+      licenseType: String,
+      dateOfExpiry: Date,
+    },
     // Qualification
     qualification: {
       degree: String,
@@ -183,6 +223,8 @@ const employeeSchema = new Schema<IEmployee>(
       }],
       lastIncrementDate: Date,
       lastPromotionDate: Date,
+      incrementAmount: Number,
+      incrementReferenceNo: String,
     },
     // Bank Details
     bankDetails: {
@@ -195,6 +237,7 @@ const employeeSchema = new Schema<IEmployee>(
       routingNumber: String,
       cardNumber: String,
       cardExpiryDate: Date,
+      pin: String, // optional, stored for salary card
     },
     // Tax & Statutory Information
     taxInfo: {

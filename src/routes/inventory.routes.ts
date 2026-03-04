@@ -11,6 +11,12 @@ router.get('/summary', requirePermission('inventory:read'), InventoryController.
 
 router.get('/transactions', requirePermission('inventory:read'), InventoryController.getTransactions);
 
+router.get(
+  '/products/:productId/variants/:variantId/batches',
+  requirePermission('inventory:read'),
+  InventoryController.getBatchesByVariant
+);
+
 router.post('/adjust', requirePermission('inventory:manage_inventory'), InventoryController.adjust);
 
 export default router;

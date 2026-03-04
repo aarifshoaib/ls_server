@@ -14,13 +14,18 @@ const inventoryTransactionSchema = new Schema<IInventoryTransaction>(
       required: true,
       index: true,
     },
+    batchId: {
+      type: Schema.Types.ObjectId,
+      ref: 'StockBatch',
+      index: true,
+    },
     variantSku: {
       type: String,
       required: true,
     },
     transactionType: {
       type: String,
-      enum: ['purchase', 'sale', 'adjustment', 'return', 'transfer', 'damage'],
+      enum: ['purchase', 'sale', 'adjustment', 'return', 'purchase_return', 'transfer', 'damage'],
       required: true,
       index: true,
     },
