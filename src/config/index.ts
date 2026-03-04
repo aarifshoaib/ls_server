@@ -20,6 +20,15 @@ export const config = {
     windowMs: 15 * 60 * 1000, // 15 minutes
     max: 100, // limit each IP to 100 requests per windowMs
   },
+  ai: {
+    openaiApiKey: process.env.OPENAI_API_KEY,
+    anthropicApiKey: process.env.ANTHROPIC_API_KEY,
+    defaultModel: process.env.AI_MODEL || 'gpt-4o-mini',
+    // Local Llama via Ollama (https://ollama.ai) - native API, no /v1
+    ollamaBaseUrl: process.env.OLLAMA_BASE_URL || 'http://localhost:11434',
+    ollamaModel: process.env.OLLAMA_MODEL || 'llama3.1:8b',
+    useOllama: process.env.USE_OLLAMA === 'true',
+  },
 };
 
 export default config;

@@ -6,7 +6,8 @@ import Customer from '../models/Customer';
 import CustomerLedger from '../models/CustomerLedger';
 import ApprovalConfig from '../models/ApprovalConfig';
 import { errors } from '../utils/errors';
-import { parsePagination, buildPaginatedResponse, generateCode, addDays } from '../utils/helpers';
+import { parsePagination, buildPaginatedResponse, addDays, roundToNearestQuarter } from '../utils/helpers';
+import { NumberingService } from '../services/numbering.service';
 import { InventoryService } from '../services/inventory.service';
 import { PDFService } from '../services/pdf.service';
 import mongoose from 'mongoose';
@@ -99,6 +100,62 @@ export class OrderController {
     }
   }
 
+  static async getTimeline(req: IAuthRequest, res: Response, next: NextFunction) {
+    try {
+      const order = await Order.findById(req.params.id)
+        .select('statusHistory fulfillment')
+        .populate('statusHistory.updatedBy', 'fullName')
+        .lean();
+
+      if (!order) {
+        throw errors.notFound('Order');
+      }
+
+      const timeline: Array<{
+        type: string;
+        status?: string;
+        timestamp: string;
+        updatedBy?: string;
+        notes?: string;
+      }> = [];
+
+      (order.statusHistory || []).forEach((entry: any) => {
+        timeline.push({
+          type: 'status',
+          status: entry.status,
+          timestamp: entry.timestamp ? new Date(entry.timestamp).toISOString() : new Date().toISOString(),
+          updatedBy: entry.updatedBy?.fullName || entry.updatedBy?.toString?.(),
+          notes: entry.notes,
+        });
+      });
+
+      const fulfillment = order.fulfillment || {};
+      const events = [
+        { key: 'pickedAt', type: 'picked', label: 'Picked' },
+        { key: 'packedAt', type: 'packed', label: 'Packed' },
+        { key: 'shippedAt', type: 'shipped', label: 'Shipped' },
+        { key: 'deliveredAt', type: 'delivered', label: 'Delivered' },
+      ];
+      events.forEach(({ key, type, label }) => {
+        const date = (fulfillment as any)[key];
+        if (date) {
+          timeline.push({
+            type: 'fulfillment',
+            status: type,
+            timestamp: new Date(date).toISOString(),
+            notes: label,
+          });
+        }
+      });
+
+      timeline.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+      res.json({ success: true, data: timeline });
+    } catch (error) {
+      next(error);
+    }
+  }
+
   static async getCreditNotes(req: IAuthRequest, res: Response, next: NextFunction) {
     try {
       const order = await Order.findById(req.params.id);
@@ -129,9 +186,8 @@ export class OrderController {
         throw errors.notFound('Customer');
       }
 
-      // Generate order number
-      const count = await Order.countDocuments();
-      const orderNumber = generateCode('ORD', count + 1, 6);
+      // Generate order number from numbering config
+      const orderNumber = await NumberingService.getNextCode('order');
 
       // Calculate pricing
       let subtotal = 0;
@@ -155,7 +211,9 @@ export class OrderController {
         };
       });
 
-      const grandTotal = subtotal - (req.body.itemDiscountTotal || 0) + taxTotal;
+      const grandTotalRaw = subtotal - (req.body.itemDiscountTotal || 0) + taxTotal;
+      const grandTotal = roundToNearestQuarter(grandTotalRaw);
+      const roundingAdjustment = grandTotal - grandTotalRaw;
 
       // Use approval config: when isActive, require approval (for applicable roles or all if empty)
       const approvalConfig = await getOrderApprovalConfig();
@@ -185,7 +243,7 @@ export class OrderController {
           shippingCharge: req.body.shippingCharge || 0,
           shippingDiscount: req.body.shippingDiscount || 0,
           grandTotal,
-          roundingAdjustment: 0,
+          roundingAdjustment,
         },
         paymentMethod: req.body.paymentMethod,
         balanceDue: grandTotal,
@@ -710,6 +768,8 @@ export class OrderController {
         `attachment; filename="invoice-${order.orderNumber}.pdf"`
       );
       res.setHeader('Content-Length', pdfBuffer.length);
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+      res.setHeader('Pragma', 'no-cache');
 
       res.send(pdfBuffer);
     } catch (error) {

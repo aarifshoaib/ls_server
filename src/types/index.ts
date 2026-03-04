@@ -1266,8 +1266,43 @@ export interface IEmployee extends Document {
     phone?: string;
   };
   homeCountryContact?: {
+    personalPhone?: string;
     relativeName?: string;
+    relativePhone?: string;
     phone?: string;
+  };
+  passport?: {
+    number?: string;
+    dateOfExpiry?: Date;
+  };
+  visas?: {
+    visaNumber?: string;
+    uid?: string;
+    placeOfIssue?: string;
+    dateOfIssue?: Date;
+    dateOfExpiry?: Date;
+    workPermitCode?: string;
+    personalCode?: string;
+    workPermitExpiryDate?: Date;
+    status?: 'active' | 'expired';
+  }[];
+  emiratesIds?: {
+    eidaNumber?: string;
+    dateOfIssue?: Date;
+    dateOfExpiry?: Date;
+    placeOfIssue?: string;
+    status?: 'active' | 'expired';
+  }[];
+  medicalInsurances?: {
+    cardNumber?: string;
+    beneficiaryId?: string;
+    dateOfExpiry?: Date;
+    status?: 'active' | 'expired';
+  }[];
+  drivingLicense?: {
+    number?: string;
+    licenseType?: string;
+    dateOfExpiry?: Date;
   };
   identifications?: {
     type: string;
@@ -1316,6 +1351,8 @@ export interface IEmployee extends Document {
     }[];
     lastIncrementDate?: Date;
     lastPromotionDate?: Date;
+    incrementAmount?: number;
+    incrementReferenceNo?: string;
   };
   bankDetails?: {
     bankName?: string;
@@ -1327,6 +1364,7 @@ export interface IEmployee extends Document {
     routingNumber?: string;
     cardNumber?: string;
     cardExpiryDate?: Date;
+    pin?: string;
   };
   taxInfo?: {
     taxIdentificationNumber?: string;

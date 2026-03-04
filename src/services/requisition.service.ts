@@ -3,7 +3,8 @@ import Requisition from '../models/Requisition';
 import Product from '../models/Product';
 import ApprovalConfig from '../models/ApprovalConfig';
 import { errors } from '../utils/errors';
-import { buildPaginatedResponse, generateCode } from '../utils/helpers';
+import { buildPaginatedResponse } from '../utils/helpers';
+import { NumberingService } from '../services/numbering.service';
 import { UserRole } from '../types';
 
 const DEFAULT_REQUISITION_APPROVER_ROLES: UserRole[] = ['accountant', 'admin', 'super_admin', 'hod'];
@@ -59,8 +60,7 @@ export class RequisitionService {
   }
 
   static async create(data: { items: any[] }, userId: string) {
-    const count = await Requisition.countDocuments();
-    const requisitionNumber = generateCode('REQ', count + 1, 6);
+    const requisitionNumber = await NumberingService.getNextCode('requisition');
 
     const itemsWithDetails = await this.enrichItems(data.items);
 

@@ -2,7 +2,8 @@ import { Response, NextFunction } from 'express';
 import { IAuthRequest } from '../types';
 import Vendor from '../models/Vendor';
 import { errors } from '../utils/errors';
-import { parsePagination, buildPaginatedResponse, generateCode } from '../utils/helpers';
+import { parsePagination, buildPaginatedResponse } from '../utils/helpers';
+import { NumberingService } from '../services/numbering.service';
 
 export class VendorController {
   static async getAll(req: IAuthRequest, res: Response, next: NextFunction) {
@@ -54,8 +55,7 @@ export class VendorController {
     try {
       const userId = req.user?._id?.toString() || '';
 
-      const count = await Vendor.countDocuments();
-      const vendorCode = generateCode('VND', count + 1, 5);
+      const vendorCode = await NumberingService.getNextCode('vendor');
 
       const vendorData = {
         ...req.body,

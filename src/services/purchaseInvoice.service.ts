@@ -6,7 +6,8 @@ import Product from '../models/Product';
 import ApprovalConfig from '../models/ApprovalConfig';
 import { StockBatchService } from './stockBatch.service';
 import { errors } from '../utils/errors';
-import { buildPaginatedResponse, generateCode } from '../utils/helpers';
+import { buildPaginatedResponse } from '../utils/helpers';
+import { NumberingService } from '../services/numbering.service';
 import { UserRole } from '../types';
 
 const DEFAULT_PI_APPROVER_ROLES: UserRole[] = ['accountant', 'admin', 'super_admin', 'hod'];
@@ -89,8 +90,7 @@ export class PurchaseInvoiceService {
       }
     }
 
-    const count = await PurchaseInvoice.countDocuments();
-    const invoiceNumber = generateCode('PI', count + 1, 6);
+    const invoiceNumber = await NumberingService.getNextCode('purchase_invoice');
 
     const productIds = [...new Set(data.items.map((i: any) => i.productId?.toString()).filter(Boolean))];
     const products = await Product.find({ _id: { $in: productIds } }).select('variants');

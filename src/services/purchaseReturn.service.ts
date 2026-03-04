@@ -5,7 +5,8 @@ import Product from '../models/Product';
 import ApprovalConfig from '../models/ApprovalConfig';
 import { StockBatchService } from './stockBatch.service';
 import { errors } from '../utils/errors';
-import { buildPaginatedResponse, generateCode } from '../utils/helpers';
+import { buildPaginatedResponse } from '../utils/helpers';
+import { NumberingService } from '../services/numbering.service';
 import { UserRole } from '../types';
 
 const DEFAULT_PR_APPROVER_ROLES: UserRole[] = ['accountant', 'admin', 'super_admin', 'hod'];
@@ -102,8 +103,7 @@ export class PurchaseReturnService {
       };
     });
 
-    const count = await PurchaseReturn.countDocuments();
-    const returnNumber = generateCode('PR', count + 1, 6);
+    const returnNumber = await NumberingService.getNextCode('purchase_return');
 
     const pr = new PurchaseReturn({
       returnNumber,

@@ -32,6 +32,8 @@ import holidayRoutes from './holiday.routes';
 import roleRoutes from './role.routes';
 import paymentRoutes from './payment.routes';
 import approvalConfigRoutes from './approvalConfig.routes';
+import aiRoutes from './ai.routes';
+import numberingConfigRoutes from './numberingConfig.routes';
 
 const router = Router();
 
@@ -85,6 +87,8 @@ router.use('/holidays', holidayRoutes);
 router.use('/roles', roleRoutes);
 router.use('/payments', paymentRoutes);
 router.use('/approval-configs', approvalConfigRoutes);
+router.use('/ai', aiRoutes);
+router.use('/numbering-config', numberingConfigRoutes);
 
 // Health check
 router.get('/health', (_req, res) => {

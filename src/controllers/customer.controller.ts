@@ -2,7 +2,8 @@ import { Response, NextFunction } from 'express';
 import { IAuthRequest } from '../types';
 import Customer from '../models/Customer';
 import { errors } from '../utils/errors';
-import { parsePagination, buildPaginatedResponse, generateCode } from '../utils/helpers';
+import { parsePagination, buildPaginatedResponse } from '../utils/helpers';
+import { NumberingService } from '../services/numbering.service';
 
 export class CustomerController {
   static async getAll(req: IAuthRequest, res: Response, next: NextFunction) {
@@ -53,9 +54,8 @@ export class CustomerController {
     try {
       const userId = req.user?._id.toString() || '';
 
-      // Generate customer code
-      const count = await Customer.countDocuments();
-      const customerCode = generateCode('CUST', count + 1, 5);
+      // Generate customer code from numbering config
+      const customerCode = await NumberingService.getNextCode('customer');
 
       const customerData = {
         ...req.body,

@@ -18,6 +18,8 @@ router.get('/', requirePermission('orders:read'), OrderController.getAll);
 
 router.get('/:id/credit-notes', requirePermission('orders:read'), OrderController.getCreditNotes);
 
+router.get('/:id/timeline', requirePermission('orders:read'), OrderController.getTimeline);
+
 router.get('/:id', requirePermission('orders:read'), OrderController.getById);
 
 router.post('/', requirePermission('orders:create'), OrderController.create);

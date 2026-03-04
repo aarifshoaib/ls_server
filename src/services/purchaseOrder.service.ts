@@ -4,7 +4,8 @@ import Requisition from '../models/Requisition';
 import Vendor from '../models/Vendor';
 import ApprovalConfig from '../models/ApprovalConfig';
 import { errors } from '../utils/errors';
-import { buildPaginatedResponse, generateCode } from '../utils/helpers';
+import { buildPaginatedResponse } from '../utils/helpers';
+import { NumberingService } from '../services/numbering.service';
 import { UserRole } from '../types';
 
 const DEFAULT_PO_APPROVER_ROLES: UserRole[] = ['accountant', 'admin', 'super_admin', 'hod'];
@@ -87,8 +88,7 @@ export class PurchaseOrderService {
       throw errors.validation('Purchase Order already exists for this requisition');
     }
 
-    const count = await PurchaseOrder.countDocuments();
-    const purchaseOrderNumber = generateCode('PO', count + 1, 6);
+    const purchaseOrderNumber = await NumberingService.getNextCode('purchase_order');
 
     let items: any[];
     if (data.items && data.items.length > 0) {
