@@ -64,7 +64,6 @@ const productVariantSchema = new Schema<IProductVariant>({
   variantSku: {
     type: String,
     required: true,
-    unique: true,
     index: true,
   },
   name: {
