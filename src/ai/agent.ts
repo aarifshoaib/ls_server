@@ -71,7 +71,7 @@ function getLLM() {
   if (config.ai.anthropicApiKey) {
     return new ChatAnthropic({
       apiKey: config.ai.anthropicApiKey,
-      model: 'claude-3-5-sonnet-20241022',
+      model: process.env.ANTHROPIC_MODEL || 'claude-3-5-sonnet-20240620',
     });
   }
   if (config.ai.openaiApiKey) {

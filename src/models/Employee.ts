@@ -37,11 +37,11 @@ const employeeSchema = new Schema<IEmployee>(
     },
     gender: {
       type: String,
-      enum: ['male', 'female', 'other'],
+      trim: true,
     },
     maritalStatus: {
       type: String,
-      enum: ['single', 'married', 'divorced', 'widowed'],
+      trim: true,
     },
     nationality: {
       type: String,
@@ -133,6 +133,12 @@ const employeeSchema = new Schema<IEmployee>(
       dateOfExpiry: Date,
       status: { type: String, enum: ['active', 'expired'], default: 'active' },
     }],
+    // Labor card information
+    laborCard: {
+      workPermitNo: String,
+      personalNo: String,
+      expiryDate: Date,
+    },
     // Driving license
     drivingLicense: {
       number: String,
@@ -160,7 +166,7 @@ const employeeSchema = new Schema<IEmployee>(
       },
       employmentType: {
         type: String,
-        enum: ['full_time', 'part_time', 'contract', 'probation'],
+        trim: true,
         default: 'full_time',
       },
       joiningDate: {
@@ -200,7 +206,7 @@ const employeeSchema = new Schema<IEmployee>(
       },
       paymentMode: {
         type: String,
-        enum: ['bank_transfer', 'cash', 'cheque'],
+        trim: true,
         default: 'bank_transfer',
       },
       effectiveFrom: Date,
