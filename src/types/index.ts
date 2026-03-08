@@ -1299,6 +1299,11 @@ export interface IEmployee extends Document {
     dateOfExpiry?: Date;
     status?: 'active' | 'expired';
   }[];
+  laborCard?: {
+    workPermitNo?: string;
+    personalNo?: string;
+    expiryDate?: Date;
+  };
   drivingLicense?: {
     number?: string;
     licenseType?: string;

@@ -80,15 +80,20 @@ export class ProductService {
   static async createProduct(data: any, userId: string) {
     // Generate SKU if not provided
     if (!data.sku) {
-      data.sku = generateSKU(data.name);
+      let baseSku = generateSKU(data.name);
+      let candidate = baseSku;
+      let suffix = 2;
+      while (await Product.findOne({ sku: candidate })) {
+        candidate = `${baseSku}-${suffix}`;
+        suffix++;
+      }
+      data.sku = candidate;
     } else {
       data.sku = data.sku.toUpperCase();
-    }
-
-    // Check if SKU already exists
-    const existingProduct = await Product.findOne({ sku: data.sku });
-    if (existingProduct) {
-      throw errors.duplicateEntry('SKU', data.sku);
+      const existingProduct = await Product.findOne({ sku: data.sku });
+      if (existingProduct) {
+        throw errors.duplicateEntry('SKU', data.sku);
+      }
     }
 
     // Generate variant SKUs
