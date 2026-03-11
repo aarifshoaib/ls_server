@@ -61,30 +61,60 @@ export class NumberingService {
     }
   }
 
-  static async getAll(): Promise<Array<{ entity: string; prefix: string; digitCount: number; useSeparator: boolean }>> {
+  static async getAll(): Promise<Array<{ entity: string; scopeType?: string | null; scopeValue?: string | null; prefix: string; digitCount: number; useSeparator: boolean }>> {
     await this.ensureDefaults();
     const list = await NumberingConfig.find().sort({ entity: 1 }).lean();
     const entities = Object.keys(DEFAULT_CONFIG) as NumberingEntity[];
     const map = new Map(list.map((c) => [c.entity, c]));
-    return entities.map((entity) => {
+    const globalConfigs = entities.map((entity) => {
       const row = map.get(entity) || DEFAULT_CONFIG[entity];
       return {
         entity,
+        scopeType: (row as any).scopeType ?? null,
+        scopeValue: (row as any).scopeValue ?? null,
         prefix: (row as any).prefix ?? DEFAULT_CONFIG[entity].prefix,
         digitCount: (row as any).digitCount ?? DEFAULT_CONFIG[entity].digitCount,
         useSeparator: (row as any).useSeparator ?? DEFAULT_CONFIG[entity].useSeparator,
       };
     });
+
+    const scopedEmployeeConfigs = await NumberingConfig.find({
+      entity: 'employee',
+      scopeType: 'department',
+      scopeValue: { $ne: null },
+    })
+      .sort({ scopeValue: 1 })
+      .lean();
+
+    const scopedRows = scopedEmployeeConfigs.map((row) => ({
+      entity: row.entity,
+      scopeType: row.scopeType ?? null,
+      scopeValue: row.scopeValue ?? null,
+      prefix: row.prefix,
+      digitCount: row.digitCount,
+      useSeparator: row.useSeparator,
+    }));
+
+    return [...globalConfigs, ...scopedRows];
   }
 
   static async update(
     entity: NumberingEntity,
-    data: { prefix?: string; digitCount?: number; useSeparator?: boolean }
+    data: { prefix?: string; digitCount?: number; useSeparator?: boolean; scopeType?: 'department' | null; scopeValue?: string | null }
   ): Promise<void> {
+    const scopeType = data.scopeType ?? null;
+    const scopeValue = data.scopeValue ? String(data.scopeValue).trim().toUpperCase() : null;
+
+    if (scopeType && entity !== 'employee') {
+      throw new Error('Scoped numbering is supported only for employee entity');
+    }
+
     await NumberingConfig.findOneAndUpdate(
-      { entity },
+      { entity, scopeType, scopeValue },
       {
         $set: {
+          scopeType,
+          scopeValue,
           ...(data.prefix != null && { prefix: data.prefix.trim().toUpperCase() }),
           ...(data.digitCount != null && { digitCount: Math.max(1, Math.min(10, data.digitCount)) }),
           ...(data.useSeparator != null && { useSeparator: data.useSeparator }),
@@ -128,5 +158,72 @@ export class NumberingService {
     }
 
     return formatCode(prefix, nextNumber, digitCount, useSeparator);
+  }
+
+  static async getEmployeeDepartmentConfig(departmentCode: string): Promise<
+    { prefix: string; digitCount: number; useSeparator: boolean; scopeType?: string | null; scopeValue?: string | null } | null
+  > {
+    const department = String(departmentCode || '').trim().toUpperCase();
+    if (!department) {
+      return null;
+    }
+
+    const config = await NumberingConfig.findOne({
+      entity: 'employee',
+      scopeType: 'department',
+      scopeValue: department,
+    }).lean();
+
+    if (!config) {
+      return null;
+    }
+
+    return {
+      prefix: config.prefix,
+      digitCount: config.digitCount,
+      useSeparator: config.useSeparator,
+      scopeType: config.scopeType,
+      scopeValue: config.scopeValue,
+    };
+  }
+
+  static async getNextEmployeeCodeByDepartment(departmentCode: string): Promise<string> {
+    const department = String(departmentCode || '').trim().toUpperCase();
+    if (!department) {
+      throw new Error('Department is required for employee number generation');
+    }
+
+    const config = await this.getEmployeeDepartmentConfig(department);
+    if (!config) {
+      throw new Error(`Numbering seed is not configured for department '${department}'`);
+    }
+
+    const { model, field } = ENTITY_MODEL_AND_FIELD.employee;
+    const sep = config.useSeparator ? '-' : '';
+    const regex = new RegExp(`^${config.prefix}${sep}(\\d+)$`);
+
+    const docs = await model
+      .find({ [field]: { $regex: `^${config.prefix}` } })
+      .sort({ [field]: -1 })
+      .limit(1)
+      .select(field)
+      .lean();
+
+    let nextNumber = 1;
+    if (docs.length > 0 && docs[0][field]) {
+      const val = String(docs[0][field]);
+      let m = val.match(regex);
+      if (!m) m = val.match(new RegExp(`${config.prefix}[-]?(\\d+)`));
+      if (!m) {
+        const lastNum = val.match(/(\d+)(?!.*\d)/);
+        if (lastNum) m = lastNum;
+      }
+      if (m) {
+        const n = parseInt(m[1], 10);
+        if (!isNaN(n)) nextNumber = n + 1;
+      }
+    }
+
+    return formatCode(config.prefix, nextNumber, config.digitCount, config.useSeparator);
   }
 }

@@ -28,7 +28,7 @@ export class NumberingConfigController {
   static async update(req: IAuthRequest, res: Response, next: NextFunction): Promise<void> {
     try {
       const { entity } = req.params;
-      const { prefix, digitCount, useSeparator } = req.body;
+      const { prefix, digitCount, useSeparator, scopeType, scopeValue } = req.body;
       if (!entity || !VALID_ENTITIES.includes(entity as any)) {
         res.status(400).json({ success: false, error: 'Invalid entity' });
         return;
@@ -37,9 +37,11 @@ export class NumberingConfigController {
         ...(prefix != null && { prefix: String(prefix).trim() }),
         ...(digitCount != null && { digitCount: Number(digitCount) }),
         ...(useSeparator != null && { useSeparator: Boolean(useSeparator) }),
+        ...(scopeType != null && { scopeType: scopeType === 'department' ? 'department' : null }),
+        ...(scopeValue != null && { scopeValue: String(scopeValue).trim() }),
       });
       const configs = await NumberingService.getAll();
-      const updated = configs.find((c) => c.entity === entity);
+      const updated = configs.find((c) => c.entity === entity && (c.scopeType || null) === (scopeType || null) && (c.scopeValue || null) === ((scopeValue ? String(scopeValue).trim().toUpperCase() : null)));
       res.json({ success: true, data: updated });
     } catch (error) {
       next(error);
@@ -59,6 +61,8 @@ export class NumberingConfigController {
             ...(item.prefix != null && { prefix: String(item.prefix).trim() }),
             ...(item.digitCount != null && { digitCount: Number(item.digitCount) }),
             ...(item.useSeparator != null && { useSeparator: Boolean(item.useSeparator) }),
+            ...(item.scopeType != null && { scopeType: item.scopeType === 'department' ? 'department' : null }),
+            ...(item.scopeValue != null && { scopeValue: String(item.scopeValue).trim() }),
           });
         }
       }
