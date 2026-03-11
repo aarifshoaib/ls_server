@@ -1408,7 +1408,7 @@ export interface IEmployee extends Document {
       isAttendanceBased?: boolean;
     }[];
   };
-  status: 'active' | 'inactive' | 'terminated' | 'on_hold';
+  status: 'active' | 'inactive' | 'onleave';
   terminationInfo?: {
     terminationDate?: Date;
     reason?: string;
@@ -1435,7 +1435,7 @@ export interface IEmployee extends Document {
   updatedAt: Date;
 }
 
-export type EmployeeStatus = 'active' | 'inactive' | 'terminated' | 'on_hold';
+export type EmployeeStatus = 'active' | 'inactive' | 'onleave';
 
 // Advance Types
 export interface IAdvance extends Document {

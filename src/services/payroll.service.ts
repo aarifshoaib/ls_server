@@ -206,6 +206,8 @@ export class PayrollService {
         .populate('assignedComponents.earnings.componentId')
         .populate('assignedComponents.deductions.componentId');
 
+      const activeEmployees = employees.filter((employee: any) => employee.status === 'active');
+
       const employeePayrolls = [];
       let totalGrossEarnings = 0;
       let totalDeductions = 0;
@@ -215,7 +217,7 @@ export class PayrollService {
       let totalAdhocEarnings = 0;
       let totalAdhocDeductions = 0;
 
-      for (const employee of employees) {
+      for (const employee of activeEmployees) {
         const employeePayroll = await this.calculateEmployeePayroll(
           employee,
           payCycle,
@@ -1136,6 +1138,8 @@ export class PayrollService {
         .populate('assignedComponents.earnings.componentId')
         .populate('assignedComponents.deductions.componentId');
 
+      const activeEmployees = employees.filter((employee: any) => employee.status === 'active');
+
       const employeePayrolls = [];
       let totalGrossEarnings = 0;
       let totalDeductions = 0;
@@ -1145,7 +1149,7 @@ export class PayrollService {
       let totalAdhocEarnings = 0;
       let totalAdhocDeductions = 0;
 
-      for (const employee of employees) {
+      for (const employee of activeEmployees) {
         const employeePayroll = await this.calculateEmployeePayroll(
           employee,
           payCycle,

@@ -25,6 +25,16 @@ const LOOKUP_SEEDS: LookupSeed[] = [
   { category: 'employment_type', code: 'contract', name: 'Contract', sortOrder: 3 },
   { category: 'employment_type', code: 'probation', name: 'Probation', sortOrder: 4 },
 
+  { category: 'department', code: 'HR', name: 'Human Resources', sortOrder: 1 },
+  { category: 'department', code: 'FINANCE', name: 'Finance', sortOrder: 2 },
+  { category: 'department', code: 'OPERATIONS', name: 'Operations', sortOrder: 3 },
+  { category: 'department', code: 'IT', name: 'Information Technology', sortOrder: 4 },
+  { category: 'department', code: 'SALES', name: 'Sales', sortOrder: 5 },
+
+  { category: 'employee_status', code: 'active', name: 'Active', sortOrder: 1 },
+  { category: 'employee_status', code: 'inactive', name: 'Inactive', sortOrder: 2 },
+  { category: 'employee_status', code: 'onleave', name: 'On Leave', sortOrder: 3 },
+
   // Payroll/payment configuration
   { category: 'payment_mode', code: 'bank_transfer', name: 'Bank Transfer', sortOrder: 1 },
   { category: 'payment_mode', code: 'cash', name: 'Cash', sortOrder: 2 },

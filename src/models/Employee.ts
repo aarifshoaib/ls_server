@@ -327,7 +327,7 @@ const employeeSchema = new Schema<IEmployee>(
     // Status
     status: {
       type: String,
-      enum: ['active', 'inactive', 'terminated', 'on_hold'],
+      enum: ['active', 'inactive', 'onleave'],
       default: 'active',
       index: true,
     },
