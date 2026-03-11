@@ -706,6 +706,9 @@ export class AttendanceService {
     if (!employee) {
       throw errors.notFound('Employee');
     }
+    if (employee.status !== 'active') {
+      throw errors.validation('Attendance can be processed only for active employees');
+    }
 
     // Check if attendance already exists for this date
     // Use parseUTCDate to ensure consistent UTC midnight storage
@@ -820,6 +823,16 @@ export class AttendanceService {
             employeeId: record.employeeId,
             date: record.date,
             error: 'Employee not found or not assigned to this PayCycle',
+          });
+          continue;
+        }
+
+        if (employee.status !== 'active') {
+          results.failed++;
+          results.errors.push({
+            employeeId: record.employeeId,
+            date: record.date,
+            error: 'Attendance can be processed only for active employees',
           });
           continue;
         }

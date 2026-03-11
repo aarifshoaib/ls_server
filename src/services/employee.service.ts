@@ -1,12 +1,34 @@
 import { Types } from 'mongoose';
 import Employee from '../models/Employee';
 import User from '../models/User';
+import LookupValue from '../models/LookupValue';
 import { errors } from '../utils/errors';
 import { parsePagination, buildPaginatedResponse } from '../utils/helpers';
 import { NumberingService } from '../services/numbering.service';
 import { IPaginationQuery } from '../types';
 
 export class EmployeeService {
+  private static async validateEmployeeStatus(status: any): Promise<'active' | 'inactive' | 'onleave'> {
+    const normalizedStatus = String(status || '').trim().toLowerCase();
+    const allowed = ['active', 'inactive', 'onleave'];
+
+    if (!allowed.includes(normalizedStatus)) {
+      throw errors.validation('Employee status is required and must be one of: active, inactive, onleave');
+    }
+
+    const statusLookup = await LookupValue.findOne({
+      category: 'employee_status',
+      code: normalizedStatus.toUpperCase(),
+      isActive: true,
+    }).lean();
+
+    if (!statusLookup) {
+      throw errors.validation(`Employee status '${normalizedStatus}' is not configured in lookup values`);
+    }
+
+    return normalizedStatus as 'active' | 'inactive' | 'onleave';
+  }
+
   // Get all employees with pagination and filters
   static async getEmployees(query: any, pagination: IPaginationQuery) {
     const { page, limit, skip } = parsePagination(pagination);
@@ -122,15 +144,30 @@ export class EmployeeService {
   }
 
   // Generate next employee code from numbering config
-  static async generateEmployeeCode(): Promise<string> {
-    return NumberingService.getNextCode('employee');
+  static async generateEmployeeCode(departmentCode: string): Promise<string> {
+    return NumberingService.getNextEmployeeCodeByDepartment(departmentCode);
   }
 
   // Create employee
   static async createEmployee(data: any, userId: string) {
+    const departmentCode = data?.employment?.department;
+    if (!departmentCode) {
+      throw errors.validation('Department is required to generate employee number');
+    }
+
+    if (!data.status) {
+      throw errors.validation('Employee status is required');
+    }
+
+    data.status = await this.validateEmployeeStatus(data.status);
+
     // Generate employee code if not provided
     if (!data.employeeCode) {
-      data.employeeCode = await this.generateEmployeeCode();
+      try {
+        data.employeeCode = await this.generateEmployeeCode(departmentCode);
+      } catch (error: any) {
+        throw errors.validation(error?.message || 'Failed to generate employee number');
+      }
     } else {
       data.employeeCode = data.employeeCode.toUpperCase();
     }
@@ -175,6 +212,10 @@ export class EmployeeService {
   // Update employee
   static async updateEmployee(id: string, data: any, userId: string) {
     const employee = await this.getEmployeeById(id);
+
+    if (data.status !== undefined) {
+      data.status = await this.validateEmployeeStatus(data.status);
+    }
 
     // Check for duplicate email if email is being changed
     if (data.email && data.email.toLowerCase() !== employee.email) {
@@ -291,11 +332,11 @@ export class EmployeeService {
   static async terminateEmployee(id: string, terminationData: any, userId: string) {
     const employee = await this.getEmployeeById(id);
 
-    if (employee.status === 'terminated') {
-      throw errors.validation('Employee is already terminated');
+    if (employee.status === 'inactive') {
+      throw errors.validation('Employee is already inactive');
     }
 
-    employee.status = 'terminated';
+    employee.status = 'inactive';
     employee.terminationInfo = {
       terminationDate: terminationData.terminationDate || new Date(),
       lastWorkingDay: terminationData.lastWorkingDay || new Date(),
