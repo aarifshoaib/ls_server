@@ -1,8 +1,10 @@
 import bcrypt from 'bcryptjs';
+import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import { Types } from 'mongoose';
 import User from '../models/User';
 import Role from '../models/Role';
+import PasswordResetToken from '../models/PasswordResetToken';
 import { config } from '../config';
 import { errors } from '../utils/errors';
 import { IUser, IJWTPayload } from '../types';
@@ -159,7 +161,7 @@ export class AuthService {
       user: userObject,
       accessToken,
       refreshToken,
-      expiresIn: '15m',
+      expiresIn: config.jwt.accessExpiresIn as string,
     };
   }
 
@@ -202,7 +204,7 @@ export class AuthService {
       return {
         accessToken: newAccessToken,
         refreshToken: newRefreshToken,
-        expiresIn: '15m',
+        expiresIn: config.jwt.accessExpiresIn as string,
       };
     } catch (error: any) {
       if (error.name === 'TokenExpiredError' || error.name === 'JsonWebTokenError') {
@@ -210,6 +212,53 @@ export class AuthService {
       }
       throw error;
     }
+  }
+
+  // Forgot password - create reset token
+  static async forgotPassword(email: string): Promise<{ token: string }> {
+    const user = await User.findOne({ email }).select('_id');
+    if (!user) {
+      // Don't reveal if email exists - same response for security
+      return { token: '' };
+    }
+
+    // Invalidate any existing tokens for this user
+    await PasswordResetToken.deleteMany({ userId: user._id });
+
+    const token = crypto.randomBytes(32).toString('hex');
+    const expiresAt = new Date();
+    expiresAt.setHours(expiresAt.getHours() + 1); // 1 hour
+
+    await PasswordResetToken.create({
+      userId: user._id,
+      token,
+      expiresAt,
+    });
+
+    // TODO: Send email with reset link (e.g. ${config.frontendUrl}/reset-password?token=${token})
+    // For development, token is returned so flow can be tested
+    return { token };
+  }
+
+  // Reset password - verify token and update password
+  static async resetPassword(token: string, newPassword: string): Promise<void> {
+    const resetDoc = await PasswordResetToken.findOne({
+      token,
+      expiresAt: { $gt: new Date() },
+    });
+
+    if (!resetDoc) {
+      throw errors.invalidToken();
+    }
+
+    const { hash: passwordHash, salt } = await this.hashPassword(newPassword);
+
+    await User.findByIdAndUpdate(resetDoc.userId, {
+      passwordHash,
+      passwordSalt: salt,
+    });
+
+    await PasswordResetToken.deleteOne({ _id: resetDoc._id });
   }
 
   // Logout

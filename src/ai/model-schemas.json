@@ -32,7 +32,7 @@
     },
     {
       "name": "stockbatches",
-      "description": "Stock batches with expiry, quantity per product variant. Use for: batch expiry, stock by batch, expiring stock",
+      "description": "Product/inventory stock batches with expiry. Use for: batch expiry, stock by batch, expiring stock. NOTE: This is PRODUCT inventory - NOT employee documents (passport, visa). For employee document expiry use get_employee_document_expiry tool.",
       "fields": [
         { "name": "_id", "type": "ObjectId" },
         { "name": "productId", "type": "ObjectId", "ref": "Product" },
@@ -135,7 +135,7 @@
     },
     {
       "name": "employees",
-      "description": "Employee records. Use for: employee lookup, leave/attendance queries by employee",
+      "description": "Employee records. Use for: employee lookup, leave/attendance queries. NOTE: For document expiry (passport, visa, Emirates ID expiring), use get_employee_document_expiry tool instead - do NOT query this collection for document expiry.",
       "fields": [
         { "name": "_id", "type": "ObjectId" },
         { "name": "employeeCode", "type": "String" },
@@ -145,9 +145,13 @@
         { "name": "fullName", "type": "String" },
         { "name": "email", "type": "String" },
         { "name": "phone", "type": "String" },
-        { "name": "department", "type": "String" },
-        { "name": "designation", "type": "String" },
-        { "name": "status", "type": "String" }
+        { "name": "employment.department", "type": "Object" },
+        { "name": "employment.designation", "type": "String" },
+        { "name": "status", "type": "String" },
+        { "name": "passport.dateOfExpiry", "type": "Date" },
+        { "name": "visas", "type": "Array", "fields": ["dateOfExpiry", "workPermitExpiryDate"] },
+        { "name": "emiratesIds", "type": "Array", "fields": ["dateOfExpiry"] },
+        { "name": "laborCard.expiryDate", "type": "Date" }
       ]
     },
     {

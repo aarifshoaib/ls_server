@@ -8,25 +8,26 @@ import { NumberingService } from '../services/numbering.service';
 import { IPaginationQuery } from '../types';
 
 export class EmployeeService {
-  private static async validateEmployeeStatus(status: any): Promise<'active' | 'inactive' | 'onleave'> {
+  private static async validateEmployeeStatus(status: any): Promise<string> {
     const normalizedStatus = String(status || '').trim().toLowerCase();
-    const allowed = ['active', 'inactive', 'onleave'];
-
-    if (!allowed.includes(normalizedStatus)) {
-      throw errors.validation('Employee status is required and must be one of: active, inactive, onleave');
+    if (!normalizedStatus) {
+      throw errors.validation('Employee status is required');
     }
 
-    const statusLookup = await LookupValue.findOne({
+    const statusLookups = await LookupValue.find({
       category: 'employee_status',
-      code: normalizedStatus.toUpperCase(),
       isActive: true,
-    }).lean();
+    }).select('code').lean();
 
-    if (!statusLookup) {
-      throw errors.validation(`Employee status '${normalizedStatus}' is not configured in lookup values`);
+    const match = statusLookups.find(
+      (l) => (l.code || '').toString().toLowerCase() === normalizedStatus
+    );
+
+    if (!match) {
+      throw errors.validation(`Employee status '${status}' is not configured in lookup values (Settings → Lookup Values → Employee Statuses)`);
     }
 
-    return normalizedStatus as 'active' | 'inactive' | 'onleave';
+    return (match.code || normalizedStatus).toString().toLowerCase();
   }
 
   // Get all employees with pagination and filters
@@ -35,9 +36,9 @@ export class EmployeeService {
 
     const filter: any = {};
 
-    // Status filter
+    // Status filter (case-insensitive to match stored lowercase codes)
     if (query.status) {
-      filter.status = query.status;
+      filter.status = String(query.status).trim().toLowerCase();
     }
 
     // Department filter
@@ -436,6 +437,105 @@ export class EmployeeService {
       .limit(50);
 
     return employees;
+  }
+
+  // Get document expiry report for active employees only
+  static async getDocumentExpiry(daysAhead: number = 90) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const cutoff = new Date(today);
+    cutoff.setDate(cutoff.getDate() + daysAhead);
+
+    // Resolve active status from lookups (handles different codes)
+    const activeLookup = await LookupValue.findOne({
+      category: 'employee_status',
+      code: { $regex: /^active$/i },
+      isActive: true,
+    })
+      .select('code')
+      .lean();
+    const activeStatus = activeLookup?.code?.toString().toLowerCase() ?? 'active';
+
+    const employees = await Employee.find({ status: activeStatus })
+      .select('_id employeeCode firstName lastName fullName employment.department passport visas emiratesIds medicalInsurances laborCard drivingLicense identifications')
+      .lean();
+
+    const items: Array<{
+      employeeId: string;
+      employeeCode: string;
+      fullName: string;
+      department: string;
+      documentType: string;
+      documentRef: string;
+      expiryDate: Date;
+      daysToExpiry: number;
+      isExpired: boolean;
+    }> = [];
+
+    const addDoc = (
+      emp: any,
+      docType: string,
+      ref: string,
+      expiry: Date | undefined
+    ) => {
+      if (!expiry || isNaN(new Date(expiry).getTime())) return;
+      const expDate = new Date(expiry);
+      expDate.setHours(0, 0, 0, 0);
+      if (expDate > cutoff) return; // beyond our window
+      const days = Math.round((expDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+      items.push({
+        employeeId: emp._id.toString(),
+        employeeCode: emp.employeeCode || '',
+        fullName: emp.fullName || `${emp.firstName || ''} ${emp.lastName || ''}`.trim(),
+        department: emp.employment?.department || '-',
+        documentType: docType,
+        documentRef: ref,
+        expiryDate: expDate,
+        daysToExpiry: days,
+        isExpired: days < 0,
+      });
+    };
+
+    for (const emp of employees) {
+      if (emp.passport?.dateOfExpiry) {
+        addDoc(emp, 'Passport', emp.passport.number || '-', emp.passport.dateOfExpiry);
+      }
+      (emp.visas || []).filter((v: any) => v.status === 'active').forEach((v: any) => {
+        if (v.dateOfExpiry) addDoc(emp, 'Visa', v.visaNumber || v.workPermitCode || '-', v.dateOfExpiry);
+        if (v.workPermitExpiryDate) addDoc(emp, 'Work Permit', v.workPermitCode || '-', v.workPermitExpiryDate);
+      });
+      (emp.emiratesIds || []).filter((e: any) => e.status === 'active').forEach((e: any) => {
+        if (e.dateOfExpiry) addDoc(emp, 'Emirates ID', e.eidaNumber || '-', e.dateOfExpiry);
+      });
+      (emp.medicalInsurances || []).filter((m: any) => m.status === 'active').forEach((m: any) => {
+        if (m.dateOfExpiry) addDoc(emp, 'Medical Insurance', m.cardNumber || '-', m.dateOfExpiry);
+      });
+      if (emp.laborCard?.expiryDate) {
+        addDoc(emp, 'Labor Card', emp.laborCard.workPermitNo || emp.laborCard.personalNo || '-', emp.laborCard.expiryDate);
+      }
+      if (emp.drivingLicense?.dateOfExpiry) {
+        addDoc(emp, 'Driving License', emp.drivingLicense.number || '-', emp.drivingLicense.dateOfExpiry);
+      }
+      (emp.identifications || []).forEach((i: any) => {
+        if (i.expiryDate) addDoc(emp, (i.type || 'ID').replace(/_/g, ' '), i.number || '-', i.expiryDate);
+      });
+    }
+
+    // Sort: expired first, then by days to expiry ascending
+    items.sort((a, b) => {
+      if (a.isExpired !== b.isExpired) return a.isExpired ? -1 : 1;
+      return a.daysToExpiry - b.daysToExpiry;
+    });
+
+    // Group by document type
+    const groupedByType: Record<string, typeof items> = {};
+    for (const item of items) {
+      const type = item.documentType;
+      if (!groupedByType[type]) groupedByType[type] = [];
+      groupedByType[type].push(item);
+    }
+
+    return { items, groupedByType, total: items.length };
   }
 
   // Get employee statistics
