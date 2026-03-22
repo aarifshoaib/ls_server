@@ -1,6 +1,7 @@
-import crypto from 'crypto';
+import bcrypt from 'bcryptjs';
 import User from '../models/User';
 import { Types } from 'mongoose';
+import { config } from '../config';
 
 interface GetAllParams {
   page: number;
@@ -13,12 +14,10 @@ interface GetAllParams {
 }
 
 export class UserService {
-  private static hashPassword(password: string, salt: string): string {
-    return crypto.pbkdf2Sync(password, salt, 10000, 64, 'sha512').toString('hex');
-  }
-
-  private static generateSalt(): string {
-    return crypto.randomBytes(16).toString('hex');
+  private static async hashPassword(password: string): Promise<{ hash: string; salt: string }> {
+    const salt = await bcrypt.genSalt(config.bcrypt.saltRounds);
+    const hash = await bcrypt.hash(password, salt);
+    return { hash, salt };
   }
 
   private static generateEmployeeId(): string {
@@ -100,8 +99,7 @@ export class UserService {
   }
 
   static async create(data: any, createdBy: Types.ObjectId) {
-    const salt = this.generateSalt();
-    const passwordHash = this.hashPassword(data.password, salt);
+    const { hash: passwordHash, salt } = await this.hashPassword(data.password);
     const employeeId = data.employeeId || this.generateEmployeeId();
 
     const user = new User({
@@ -183,8 +181,8 @@ export class UserService {
   }
 
   static async changePassword(id: string, newPassword: string) {
-    const salt = this.generateSalt();
-    const passwordHash = this.hashPassword(newPassword, salt);
+    const pwd = typeof newPassword === 'string' ? newPassword.trim() : newPassword;
+    const { hash: passwordHash, salt } = await this.hashPassword(pwd);
 
     const user = await User.findByIdAndUpdate(id, {
       passwordHash,
@@ -198,15 +196,14 @@ export class UserService {
     const user = await User.findById(id).select('+passwordHash +passwordSalt');
     if (!user) return false;
 
-    // Verify current password
-    const currentHash = this.hashPassword(currentPassword, user.passwordSalt);
-    if (currentHash !== user.passwordHash) {
+    // Verify current password (bcrypt.compare works with hash only)
+    const isValid = await bcrypt.compare(currentPassword, user.passwordHash);
+    if (!isValid) {
       return false;
     }
 
     // Set new password
-    const salt = this.generateSalt();
-    const passwordHash = this.hashPassword(newPassword, salt);
+    const { hash: passwordHash, salt } = await this.hashPassword(newPassword);
 
     await User.findByIdAndUpdate(id, {
       passwordHash,

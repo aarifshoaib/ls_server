@@ -216,4 +216,18 @@ export class EmployeeController {
       next(error);
     }
   }
+
+  static async getDocumentExpiry(req: IAuthRequest, res: Response, next: NextFunction) {
+    try {
+      const daysAhead = Math.min(365, Math.max(0, parseInt(String(req.query.daysAhead || 90), 10) || 90));
+      const result = await EmployeeService.getDocumentExpiry(daysAhead);
+
+      res.json({
+        success: true,
+        data: result,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
 }
