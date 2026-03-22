@@ -138,7 +138,8 @@ export class UserController {
 
   static async changePassword(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
     try {
-      const success = await UserService.changePassword(req.params.id, req.body.password);
+      const password = typeof req.body.password === 'string' ? req.body.password.trim() : req.body.password;
+      const success = await UserService.changePassword(req.params.id, password);
       if (!success) {
         res.status(404).json({
           success: false,

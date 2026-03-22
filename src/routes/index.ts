@@ -24,6 +24,8 @@ import lookupValueRoutes from './lookupValue.routes';
 import earningDeductionRoutes from './earningDeduction.routes';
 import payCycleRoutes from './payCycle.routes';
 import employeeRoutes from './employee.routes';
+import employeeReportsRoutes from './employeeReports.routes';
+import { EmployeeController } from '../controllers/employee.controller';
 import advanceRoutes from './advance.routes';
 import payrollRunRoutes from './payrollRun.routes';
 import payrollArchiveRoutes from './payrollArchive.routes';
@@ -79,6 +81,14 @@ router.use('/lookup-values', lookupValueRoutes);
 router.use('/earning-deductions', earningDeductionRoutes);
 router.use('/pay-cycles', payCycleRoutes);
 router.use('/employees', employeeRoutes);
+// Explicit route for document-expiry - must be before sub-router for reliable matching
+router.get(
+  '/employee-reports/document-expiry',
+  authMiddleware,
+  requirePermission('employees:read'),
+  EmployeeController.getDocumentExpiry
+);
+router.use('/employee-reports', employeeReportsRoutes);
 router.use('/advances', advanceRoutes);
 router.use('/payroll-runs', payrollRunRoutes);
 router.use('/payroll-archives', payrollArchiveRoutes);

@@ -5,6 +5,7 @@ import { ChatOllama } from '@langchain/ollama';
 import { z } from 'zod';
 import { config } from '../config';
 import { executeQuery } from './queryTool';
+import { EmployeeService } from '../services/employee.service';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -12,42 +13,60 @@ const schemasPath = path.join(__dirname, 'model-schemas.json');
 const schemasJson = fs.readFileSync(schemasPath, 'utf-8');
 const schemaDoc = JSON.parse(schemasJson);
 
-const SCHEMA_CONTEXT = schemaDoc.collections
+const SCHEMA_CONTEXT = (schemaDoc.collections || [])
   .map(
     (c: { name: string; description: string; fields: { name: string; type: string; enum?: string[] }[] }) =>
       `- **${c.name}**: ${c.description}. Fields: ${c.fields.map((f: { name: string; type: string; enum?: string[] }) => f.name + (f.enum ? ` (${f.enum.join('|')})` : '')).join(', ')}`
   )
   .join('\n');
 
-const SYSTEM_PROMPT = `You are an AI assistant for an Order Management System (OMS). You answer questions by querying the MongoDB database.
+const SYSTEM_PROMPT = `You are an AI assistant for an Order Management System (OMS) that includes both OMS (orders, products, customers, inventory, procurement) and Payroll (employees, attendance, leaves, advances, pay cycles). You answer questions by using the available tools. NEVER ask the user which collection or which attributes to use - always infer from their question and the schemas below.
 
-## Available collections and schemas
+## CRITICAL: NEVER ask clarifying questions - ALWAYS use tools directly
+- NEVER ask "which collection?", "which attributes?", "which field stores?", "could you tell me the field name?"
+- NEVER ask "is it documentExpiryDate, expiryDate, or something else?" - you have tools that handle this
+- For employee document expiry: IMMEDIATELY call get_employee_document_expiry. The tool knows all field names (passport, visa, Emirates ID, etc.) - you do NOT need to ask the user
+- ALWAYS infer the right tool and parameters from the user's natural language. Call the tool first, never ask first
+
+## Available collections and schemas (for execute_mongo_query)
 ${SCHEMA_CONTEXT}
 
-## Query tool
-You have a tool "execute_mongo_query" that runs READ-ONLY MongoDB queries. It accepts:
-1. **find**: { operation: "find", collection: "string", filter?: object, projection?: object, sort?: object, limit?: number }
-2. **aggregate**: { operation: "aggregate", collection: "string", pipeline: array }
+## Tools available
 
-- Collection names are lowercase plural (e.g., products, orders, customers, stockbatches, leaves, attendances, employees, shopvisits, purchaseorders, purchaseinvoices, purchasereturns, vendors).
-- For date filters use: { createdAt: { $gte: "2024-01-01", $lte: "2024-12-31" } } (strings work)
+### 1. get_employee_document_expiry (USE THIS - do NOT ask user for field names)
+**"Documents" = EMPLOYEE documents** (passport, visa, Emirates ID, labor card, medical insurance, driving license).
+- When user asks about employee document expiry in ANY form -> CALL THIS TOOL IMMEDIATELY. Do NOT ask which field, which collection, or any clarifying question.
+- The tool internally checks: passport.dateOfExpiry, visas[].dateOfExpiry, emiratesIds[].dateOfExpiry, laborCard.expiryDate, etc. You do NOT need to know or ask.
+- daysAhead: 365 for "expired"/"already expired", 30 for "this month", 90 for default.
+- Returns both expired and expiring employee documents with employee name, document type, expiry date.
+
+### 2. execute_mongo_query
+Use for: **stock batches** (product inventory expiry), orders, customers, attendance, leaves, shop visits, products, etc.
+- "Stock batches" / "batch expiry" / "inventory expiring" / "expiring stock" -> query stockbatches collection (product inventory).
+- **find**: { operation: "find", collection: "string", filter?: object, projection?: object, sort?: object, limit?: number }
+- **aggregate**: { operation: "aggregate", collection: "string", pipeline: array }
+
+- Collection names: products, orders, customers, stockbatches, leaves, attendances, employees, shopvisits, paycycles, payrollruns, advances, purchaseorders, purchaseinvoices, purchasereturns, vendors.
+- For date filters: { createdAt: { $gte: "2024-01-01", $lte: "2024-12-31" } }
 - Use $regex for text search: { name: { $regex: "search", $options: "i" } }
-- For "this month" use: start and end of current month as ISO strings.
-- For "this week" use: start and end of current week.
+- For "this month" use start and end of current month as ISO strings.
 - Limit results to 50 unless user asks for more.
-- Use $lookup to join when needed. Allowed stages: $match, $project, $group, $sort, $limit, $unwind, $lookup.
+
+## Query intent mapping (infer from user question)
+- **"documents" = employee documents**: "whose documents expired", "documents already expired", "who documents expiring", "passport/visa/emirates ID expiring" -> get_employee_document_expiry (daysAhead: 365 for "expired/already expired", 30 for "this month", else 90)
+- **"stock/batches" = product inventory**: "stock batches expiring", "expiring batches", "inventory expiry", "batch expiry" -> execute_mongo_query on stockbatches
+- Orders, sales -> execute_mongo_query on orders
+- Customers -> execute_mongo_query on customers
+- Attendance, leaves, shop visits -> execute_mongo_query on attendances, leaves, shopvisits
+- Payroll, pay cycles, advances, payroll runs -> execute_mongo_query on paycycles, payrollruns, advances
 
 ## CRITICAL RULES - NEVER BREAK THESE
-1. **Greetings**: If user says hi, hello, hey - respond with ONE short friendly line. Do NOT use the tool.
-2. **Never fabricate data**: ONLY show what the tool actually returned. Never invent product IDs (e.g. 1234, 5678), SKUs (e.g. ABCD-001), or numbers. If the tool returns [] or no rows, say "No results found" - do NOT make up a table.
-3. **Never output JSON/code**: Do not show "execute_mongo_query", tool parameters, "Let's run the query", or code blocks. The tool runs automatically - just show the real results.
-4. **If no tool output**: If you did not receive actual data from the tool, say "I couldn't retrieve the data." Never create example tables.
-
-## Query tool usage
-- Call execute_mongo_query ONLY when the user asks for real data (stock count, orders, customers, etc).
-- For aggregate, pipeline must be JSON array with double-quoted keys. Example stock total: {"operation":"aggregate","collection":"stockbatches","pipeline":[{"$group":{"_id":null,"total":{"$sum":"$availableQuantity"}}}]}
-- stockbatches has availableQuantity; products has variants.
-- Format results clearly. Round currency to 2 decimals.`;
+1. **Greetings**: If user says hi, hello, hey - respond with ONE short friendly line. Do NOT use tools.
+2. **Never fabricate data**: ONLY show what the tool actually returned. Never invent IDs or numbers. If no rows, say "No results found".
+3. **Never output JSON/code**: Do not show tool names, parameters, or code blocks - just show the real results.
+4. **If no tool output**: Say "I couldn't retrieve the data." Never create example tables.
+5. **Infer, don't ask**: Always pick the right tool and parameters from the question. Never ask the user for collection, attribute, or field names.
+6. **Document expiry = use tool**: For ANY question about employee documents expiring/expired, call get_employee_document_expiry with daysAhead=365. Never ask "which field stores the expiry date?" - the tool handles it.`;
 
 function getSystemPrompt(): string {
   const base = SYSTEM_PROMPT;
@@ -145,8 +164,24 @@ const executeMongoQueryTool = tool(
   },
   {
     name: 'execute_mongo_query',
-    description: 'Execute a read-only MongoDB find or aggregate query. Pass: { operation: "find", collection: "customers", filter: {}, limit: 50 } or { operation: "aggregate", collection: "orders", pipeline: [...] }. Collections: products, orders, customers, stockbatches, leaves, attendances, employees, etc.',
+    description: 'Execute a read-only MongoDB find or aggregate query. OMS: products, orders, customers, stockbatches, vendors, purchaseorders, purchaseinvoices, purchasereturns. Payroll: employees, leaves, attendances, paycycles, payrollruns, advances, shopvisits.',
     schema: z.record(z.string(), z.unknown()).describe('MongoDB query: operation, collection, filter?, projection?, sort?, limit? for find; or operation, collection, pipeline for aggregate.'),
+  }
+);
+
+const getEmployeeDocumentExpiryTool = tool(
+  async (input) => {
+    const inp = input as { daysAhead?: number };
+    const daysAhead = typeof inp?.daysAhead === 'number' ? inp.daysAhead : 90;
+    const result = await EmployeeService.getDocumentExpiry(daysAhead);
+    return JSON.stringify(result, null, 0);
+  },
+  {
+    name: 'get_employee_document_expiry',
+    description: 'Get expired or expiring EMPLOYEE documents. CALL THIS for any employee document expiry question - do NOT ask user for field names. Handles passport, visa, Emirates ID, labor card, medical insurance, driving license internally. "whose documents expired", "documents already expired" -> daysAhead: 365. "this month" -> 30. Default: 90. NEVER ask user which field stores expiry - use this tool.',
+    schema: z.object({
+      daysAhead: z.number().int().min(1).max(365).optional().describe('Days to look ahead (default 90, use 30 for this month)'),
+    }),
   }
 );
 
@@ -154,7 +189,7 @@ export function createAIAgent() {
   const model = getLLM();
   return createAgent({
     model,
-    tools: [executeMongoQueryTool],
+    tools: [getEmployeeDocumentExpiryTool, executeMongoQueryTool],
     systemPrompt: getSystemPrompt(),
   });
 }

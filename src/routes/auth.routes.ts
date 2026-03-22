@@ -25,6 +25,21 @@ router.post(
 
 router.post('/logout', authMiddleware, AuthController.logout);
 
+router.post(
+  '/forgot-password',
+  validate([body('email').isEmail().withMessage('Valid email is required')]),
+  AuthController.forgotPassword
+);
+
+router.post(
+  '/reset-password',
+  validate([
+    body('token').notEmpty().withMessage('Reset token is required'),
+    body('password').isLength({ min: 6 }).withMessage('Password must be at least 6 characters'),
+  ]),
+  AuthController.resetPassword
+);
+
 router.get('/me', authMiddleware, AuthController.getMe);
 
 export default router;

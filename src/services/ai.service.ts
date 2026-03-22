@@ -7,8 +7,8 @@ import { createAIAgent } from '../ai/agent';
 /** Remove fabricated tool-call JSON and boilerplate that local models often output */
 function sanitizeResponse(text: string): string {
   let out = text;
-  // Remove ```json ... ``` blocks containing execute_mongo_query
-  out = out.replace(/```(?:json)?\s*[\s\S]*?execute_mongo_query[\s\S]*?```/gi, '');
+  // Remove ```json ... ``` blocks containing tool calls
+  out = out.replace(/```(?:json)?\s*[\s\S]*?(?:execute_mongo_query|get_employee_document_expiry)[\s\S]*?```/gi, '');
   // Remove "Let's run the query:", "Let's correct the tool call:", etc.
   out = out.replace(/\n*(?:Let's run the query|Let's correct the tool call|Now, let's run)[^.\n]*[.\n]*/gi, '');
   return out.replace(/\n{3,}/g, '\n\n').trim();

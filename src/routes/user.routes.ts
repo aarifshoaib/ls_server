@@ -35,6 +35,27 @@ router.post(
   UserController.create
 );
 
+// Change password (for admins) - must be before /:id to match correctly
+router.put(
+  '/:id/password',
+  requirePermission('users:update'),
+  validate([
+    param('id').isMongoId().withMessage('Valid user ID is required'),
+    body('password').isLength({ min: 6 }).withMessage('Password must be at least 6 characters'),
+  ]),
+  UserController.changePassword
+);
+
+// Update user status - must be before /:id to match correctly
+router.put(
+  '/:id/status',
+  validate([
+    param('id').isMongoId().withMessage('Valid user ID is required'),
+    body('status').isIn(['active', 'inactive', 'suspended']).withMessage('Valid status is required'),
+  ]),
+  UserController.updateStatus
+);
+
 // Update user
 router.put(
   '/:id',
@@ -44,6 +65,7 @@ router.put(
     body('email').optional().isEmail().withMessage('Valid email is required'),
     body('firstName').optional().notEmpty().withMessage('First name cannot be empty'),
     body('lastName').optional().notEmpty().withMessage('Last name cannot be empty'),
+    body('role').optional().isIn(['super_admin', 'admin', 'hod', 'accountant', 'supervisor', 'sales_team', 'delivery_team', 'hrm']).withMessage('Valid role is required'),
   ]),
   UserController.update
 );
@@ -54,26 +76,6 @@ router.delete(
   requirePermission('users:delete'),
   validate([param('id').isMongoId().withMessage('Valid user ID is required')]),
   UserController.delete
-);
-
-// Update user status
-router.put(
-  '/:id/status',
-  validate([
-    param('id').isMongoId().withMessage('Valid user ID is required'),
-    body('status').isIn(['active', 'inactive', 'suspended']).withMessage('Valid status is required'),
-  ]),
-  UserController.updateStatus
-);
-
-// Change password (for admins to change user's password)
-router.put(
-  '/:id/password',
-  validate([
-    param('id').isMongoId().withMessage('Valid user ID is required'),
-    body('password').isLength({ min: 6 }).withMessage('Password must be at least 6 characters'),
-  ]),
-  UserController.changePassword
 );
 
 // Update profile (for current user)

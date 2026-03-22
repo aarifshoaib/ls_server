@@ -8,6 +8,7 @@
     "build": "tsc && mkdir -p dist/ai && cp src/ai/model-schemas.json dist/ai/",
     "start": "node dist/index.js",
     "seed": "ts-node src/scripts/seed.ts",
+    "reset-user-password": "ts-node src/scripts/resetUserPassword.ts",
     "seed:roles": "ts-node src/scripts/seedRoles.ts",
     "seed:components": "ts-node src/scripts/seedComponents.ts",
     "seed:lookups": "ts-node src/scripts/seedLookupValues.ts",

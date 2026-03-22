@@ -19,22 +19,23 @@ router.get('/code/:code', requirePermission('employees:read'), EmployeeControlle
 
 router.get('/user/:userId', requirePermission('employees:read'), EmployeeController.getByUserId);
 
-router.get('/:id', requirePermission('employees:read'), EmployeeController.getById);
+// Use regex so /document-expiry, /statistics etc. are not matched as IDs
+router.get('/:id([a-fA-F0-9]{24})', requirePermission('employees:read'), EmployeeController.getById);
 
 router.post('/', requirePermission('employees:create'), EmployeeController.create);
 
-router.put('/:id', requirePermission('employees:update'), EmployeeController.update);
+router.put('/:id([a-fA-F0-9]{24})', requirePermission('employees:update'), EmployeeController.update);
 
-router.put('/:id/salary', requirePermission('employees:update'), EmployeeController.updateSalary);
+router.put('/:id([a-fA-F0-9]{24})/salary', requirePermission('employees:update'), EmployeeController.updateSalary);
 
-router.put('/:id/components', requirePermission('employees:update'), EmployeeController.assignComponents);
+router.put('/:id([a-fA-F0-9]{24})/components', requirePermission('employees:update'), EmployeeController.assignComponents);
 
-router.put('/:id/terminate', requirePermission('employees:update'), EmployeeController.terminate);
+router.put('/:id([a-fA-F0-9]{24})/terminate', requirePermission('employees:update'), EmployeeController.terminate);
 
-router.put('/:id/link-user', requirePermission('employees:update'), EmployeeController.linkToUser);
+router.put('/:id([a-fA-F0-9]{24})/link-user', requirePermission('employees:update'), EmployeeController.linkToUser);
 
-router.put('/:id/unlink-user', requirePermission('employees:update'), EmployeeController.unlinkFromUser);
+router.put('/:id([a-fA-F0-9]{24})/unlink-user', requirePermission('employees:update'), EmployeeController.unlinkFromUser);
 
-router.delete('/:id', requirePermission('employees:delete'), EmployeeController.delete);
+router.delete('/:id([a-fA-F0-9]{24})', requirePermission('employees:delete'), EmployeeController.delete);
 
 export default router;

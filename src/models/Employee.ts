@@ -324,10 +324,10 @@ const employeeSchema = new Schema<IEmployee>(
         },
       }],
     },
-    // Status
+    // Status (values from employee_status lookup)
     status: {
       type: String,
-      enum: ['active', 'inactive', 'onleave'],
+      trim: true,
       default: 'active',
       index: true,
     },
