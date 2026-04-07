@@ -5,7 +5,7 @@ import { EmployeeService } from '../services/employee.service';
 export class EmployeeController {
   static async getAll(req: IAuthRequest, res: Response, next: NextFunction) {
     try {
-      const result = await EmployeeService.getEmployees(req.query, req.query);
+      const result = await EmployeeService.getEmployees(req.query, req.query, req.user);
 
       res.json({
         success: true,
@@ -18,7 +18,7 @@ export class EmployeeController {
 
   static async getById(req: IAuthRequest, res: Response, next: NextFunction) {
     try {
-      const employee = await EmployeeService.getEmployeeById(req.params.id);
+      const employee = await EmployeeService.getEmployeeById(req.params.id, req.user);
 
       res.json({
         success: true,
@@ -31,7 +31,7 @@ export class EmployeeController {
 
   static async getByCode(req: IAuthRequest, res: Response, next: NextFunction) {
     try {
-      const employee = await EmployeeService.getByCode(req.params.code);
+      const employee = await EmployeeService.getByCode(req.params.code, req.user);
 
       res.json({
         success: true,
@@ -44,7 +44,7 @@ export class EmployeeController {
 
   static async getByUserId(req: IAuthRequest, res: Response, next: NextFunction) {
     try {
-      const employee = await EmployeeService.getByUserId(req.params.userId);
+      const employee = await EmployeeService.getByUserId(req.params.userId, req.user);
 
       res.json({
         success: true,
@@ -58,7 +58,7 @@ export class EmployeeController {
   static async create(req: IAuthRequest, res: Response, next: NextFunction) {
     try {
       const userId = req.user?._id.toString() || '';
-      const employee = await EmployeeService.createEmployee(req.body, userId);
+      const employee = await EmployeeService.createEmployee(req.body, userId, req.user);
 
       res.status(201).json({
         success: true,
@@ -73,7 +73,7 @@ export class EmployeeController {
   static async update(req: IAuthRequest, res: Response, next: NextFunction) {
     try {
       const userId = req.user?._id.toString() || '';
-      const employee = await EmployeeService.updateEmployee(req.params.id, req.body, userId);
+      const employee = await EmployeeService.updateEmployee(req.params.id, req.body, userId, req.user);
 
       res.json({
         success: true,
@@ -88,7 +88,7 @@ export class EmployeeController {
   static async delete(req: IAuthRequest, res: Response, next: NextFunction) {
     try {
       const userId = req.user?._id.toString() || '';
-      const employee = await EmployeeService.getEmployeeById(req.params.id);
+      const employee = await EmployeeService.getEmployeeById(req.params.id, req.user);
       employee.status = 'inactive';
       employee.updatedBy = userId as any;
       await employee.save();
@@ -105,7 +105,7 @@ export class EmployeeController {
   static async updateSalary(req: IAuthRequest, res: Response, next: NextFunction) {
     try {
       const userId = req.user?._id.toString() || '';
-      const employee = await EmployeeService.updateSalary(req.params.id, req.body, userId);
+      const employee = await EmployeeService.updateSalary(req.params.id, req.body, userId, req.user);
 
       res.json({
         success: true,
@@ -120,7 +120,7 @@ export class EmployeeController {
   static async assignComponents(req: IAuthRequest, res: Response, next: NextFunction) {
     try {
       const userId = req.user?._id.toString() || '';
-      const employee = await EmployeeService.assignComponents(req.params.id, req.body, userId);
+      const employee = await EmployeeService.assignComponents(req.params.id, req.body, userId, req.user);
 
       res.json({
         success: true,
@@ -135,7 +135,7 @@ export class EmployeeController {
   static async terminate(req: IAuthRequest, res: Response, next: NextFunction) {
     try {
       const userId = req.user?._id.toString() || '';
-      const employee = await EmployeeService.terminateEmployee(req.params.id, req.body, userId);
+      const employee = await EmployeeService.terminateEmployee(req.params.id, req.body, userId, req.user);
 
       res.json({
         success: true,
@@ -150,7 +150,7 @@ export class EmployeeController {
   static async linkToUser(req: IAuthRequest, res: Response, next: NextFunction) {
     try {
       const userId = req.user?._id.toString() || '';
-      const employee = await EmployeeService.linkToUser(req.params.id, req.body.userId, userId);
+      const employee = await EmployeeService.linkToUser(req.params.id, req.body.userId, userId, req.user);
 
       res.json({
         success: true,
@@ -165,7 +165,7 @@ export class EmployeeController {
   static async unlinkFromUser(req: IAuthRequest, res: Response, next: NextFunction) {
     try {
       const userId = req.user?._id.toString() || '';
-      const employee = await EmployeeService.unlinkFromUser(req.params.id, userId);
+      const employee = await EmployeeService.unlinkFromUser(req.params.id, userId, req.user);
 
       res.json({
         success: true,
@@ -180,7 +180,7 @@ export class EmployeeController {
   static async getByPayCycle(req: IAuthRequest, res: Response, next: NextFunction) {
     try {
       const activeOnly = req.query.activeOnly !== 'false';
-      const employees = await EmployeeService.getByPayCycle(req.params.payCycleId, activeOnly);
+      const employees = await EmployeeService.getByPayCycle(req.params.payCycleId, activeOnly, req.user);
 
       res.json({
         success: true,
@@ -193,7 +193,7 @@ export class EmployeeController {
 
   static async getForDropdown(req: IAuthRequest, res: Response, next: NextFunction) {
     try {
-      const employees = await EmployeeService.getEmployeesForDropdown(req.query);
+      const employees = await EmployeeService.getEmployeesForDropdown(req.query, req.user);
 
       res.json({
         success: true,
@@ -204,9 +204,9 @@ export class EmployeeController {
     }
   }
 
-  static async getStatistics(_req: IAuthRequest, res: Response, next: NextFunction) {
+  static async getStatistics(req: IAuthRequest, res: Response, next: NextFunction) {
     try {
-      const statistics = await EmployeeService.getStatistics();
+      const statistics = await EmployeeService.getStatistics(req.user);
 
       res.json({
         success: true,
@@ -220,7 +220,7 @@ export class EmployeeController {
   static async getDocumentExpiry(req: IAuthRequest, res: Response, next: NextFunction) {
     try {
       const daysAhead = Math.min(365, Math.max(0, parseInt(String(req.query.daysAhead || 90), 10) || 90));
-      const result = await EmployeeService.getDocumentExpiry(daysAhead);
+      const result = await EmployeeService.getDocumentExpiry(daysAhead, req.user);
 
       res.json({
         success: true,

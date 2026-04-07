@@ -2,12 +2,52 @@ import { Types } from 'mongoose';
 import Employee from '../models/Employee';
 import User from '../models/User';
 import LookupValue from '../models/LookupValue';
+import Company from '../models/Company';
 import { errors } from '../utils/errors';
 import { parsePagination, buildPaginatedResponse } from '../utils/helpers';
 import { NumberingService } from '../services/numbering.service';
-import { IPaginationQuery } from '../types';
+import { IPaginationQuery, IUser } from '../types';
+import {
+  mergeCompanyFilter,
+  canAccessEmployee,
+  canAccessCompanyId,
+  getAccessibleCompanyIds,
+  GLOBAL_COMPANY_ROLES,
+} from '../utils/companyScope';
 
 export class EmployeeService {
+  private static ensureEmployeeAccess(requestingUser: IUser | undefined, employee: { companyId?: Types.ObjectId | null }) {
+    if (!requestingUser) return;
+    if (!canAccessEmployee(requestingUser, employee)) {
+      throw errors.forbidden('view or modify this employee');
+    }
+  }
+
+  private static async resolveCompanyIdForCreate(data: any, requestingUser?: IUser): Promise<Types.ObjectId> {
+    let cid = data.companyId;
+    if (!cid) {
+      const first = await Company.findOne({ isActive: true }).sort({ createdAt: 1 }).select('_id');
+      if (first && requestingUser && GLOBAL_COMPANY_ROLES.includes(requestingUser.role as any)) {
+        cid = first._id.toString();
+      } else {
+        throw errors.validation('Company (companyId) is required');
+      }
+    }
+    if (!Types.ObjectId.isValid(cid)) {
+      throw errors.validation('Invalid company ID');
+    }
+    const company = await Company.findById(cid);
+    if (!company || !company.isActive) {
+      throw errors.validation('Company not found or inactive');
+    }
+    if (requestingUser && !GLOBAL_COMPANY_ROLES.includes(requestingUser.role as any)) {
+      if (!canAccessCompanyId(requestingUser, cid)) {
+        throw errors.forbidden('assign employees to this company');
+      }
+    }
+    return new Types.ObjectId(cid);
+  }
+
   private static async validateEmployeeStatus(status: any): Promise<string> {
     const normalizedStatus = String(status || '').trim().toLowerCase();
     if (!normalizedStatus) {
@@ -31,7 +71,7 @@ export class EmployeeService {
   }
 
   // Get all employees with pagination and filters
-  static async getEmployees(query: any, pagination: IPaginationQuery) {
+  static async getEmployees(query: any, pagination: IPaginationQuery, requestingUser?: IUser) {
     const { page, limit, skip } = parsePagination(pagination);
 
     const filter: any = {};
@@ -81,30 +121,38 @@ export class EmployeeService {
       ];
     }
 
-    console.log('[EmployeeService] Full filter:', JSON.stringify(filter));
+    let scopedFilter = mergeCompanyFilter(filter, requestingUser);
+
+    if (query.companyId && Types.ObjectId.isValid(query.companyId)) {
+      const cid = new Types.ObjectId(query.companyId);
+      if (!canAccessCompanyId(requestingUser, cid)) {
+        return buildPaginatedResponse([], 0, page, limit);
+      }
+      scopedFilter = { ...scopedFilter, companyId: cid };
+    }
 
     const [employees, total] = await Promise.all([
-      Employee.find(filter)
+      Employee.find(scopedFilter)
+        .populate('companyId', 'code name')
         .populate('salaryInfo.payCycleId', 'name code')
         .populate('userId', 'email role status')
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit),
-      Employee.countDocuments(filter),
+      Employee.countDocuments(scopedFilter),
     ]);
-
-    console.log('[EmployeeService] Found employees:', employees.length, 'total:', total);
 
     return buildPaginatedResponse(employees, total, page, limit);
   }
 
   // Get employee by ID
-  static async getEmployeeById(id: string) {
+  static async getEmployeeById(id: string, requestingUser?: IUser) {
     if (!Types.ObjectId.isValid(id)) {
       throw errors.validation('Invalid employee ID');
     }
 
     const employee = await Employee.findById(id)
+      .populate('companyId', 'code name')
       .populate('salaryInfo.payCycleId')
       .populate('userId', 'email role status lastLogin')
       .populate('employment.reportingTo', 'fullName employeeCode')
@@ -115,11 +163,13 @@ export class EmployeeService {
       throw errors.notFound('Employee');
     }
 
+    this.ensureEmployeeAccess(requestingUser, employee);
+
     return employee;
   }
 
   // Get employee by code
-  static async getByCode(code: string) {
+  static async getByCode(code: string, requestingUser?: IUser) {
     const employee = await Employee.findOne({
       employeeCode: code.toUpperCase(),
     })
@@ -130,16 +180,23 @@ export class EmployeeService {
       throw errors.notFound('Employee');
     }
 
+    this.ensureEmployeeAccess(requestingUser, employee);
+
     return employee;
   }
 
   // Get employee by user ID
-  static async getByUserId(userId: string) {
+  static async getByUserId(userId: string, requestingUser?: IUser) {
     const employee = await Employee.findOne({
       userId: new Types.ObjectId(userId),
     })
+      .populate('companyId', 'code name')
       .populate('salaryInfo.payCycleId')
       .populate('userId', 'email role status');
+
+    if (employee && requestingUser) {
+      this.ensureEmployeeAccess(requestingUser, employee);
+    }
 
     return employee; // Can be null
   }
@@ -150,7 +207,10 @@ export class EmployeeService {
   }
 
   // Create employee
-  static async createEmployee(data: any, userId: string) {
+  static async createEmployee(data: any, userId: string, requestingUser?: IUser) {
+    const companyObjectId = await this.resolveCompanyIdForCreate(data, requestingUser);
+    data.companyId = companyObjectId;
+
     const departmentCode = data?.employment?.department;
     if (!departmentCode) {
       throw errors.validation('Department is required to generate employee number');
@@ -173,8 +233,11 @@ export class EmployeeService {
       data.employeeCode = data.employeeCode.toUpperCase();
     }
 
-    // Check if employee code already exists
-    const existingCode = await Employee.findOne({ employeeCode: data.employeeCode });
+    // Check if employee code already exists within the same company
+    const existingCode = await Employee.findOne({
+      companyId: data.companyId,
+      employeeCode: data.employeeCode,
+    });
     if (existingCode) {
       throw errors.duplicateEntry('Employee Code', data.employeeCode);
     }
@@ -206,13 +269,30 @@ export class EmployeeService {
 
     const employee = new Employee(data);
     await employee.save();
+    await employee.populate('companyId', 'code name');
 
     return employee;
   }
 
   // Update employee
-  static async updateEmployee(id: string, data: any, userId: string) {
-    const employee = await this.getEmployeeById(id);
+  static async updateEmployee(id: string, data: any, userId: string, requestingUser?: IUser) {
+    const employee = await this.getEmployeeById(id, requestingUser);
+
+    if (data.companyId !== undefined && data.companyId !== null) {
+      if (!Types.ObjectId.isValid(data.companyId)) {
+        throw errors.validation('Invalid company ID');
+      }
+      const company = await Company.findById(data.companyId);
+      if (!company || !company.isActive) {
+        throw errors.validation('Company not found or inactive');
+      }
+      if (requestingUser && !GLOBAL_COMPANY_ROLES.includes(requestingUser.role as any)) {
+        if (!canAccessCompanyId(requestingUser, data.companyId)) {
+          throw errors.forbidden('move employees to this company');
+        }
+      }
+      data.companyId = new Types.ObjectId(data.companyId);
+    }
 
     if (data.status !== undefined) {
       data.status = await this.validateEmployeeStatus(data.status);
@@ -258,8 +338,8 @@ export class EmployeeService {
   }
 
   // Update salary
-  static async updateSalary(id: string, salaryData: any, userId: string) {
-    const employee = await this.getEmployeeById(id);
+  static async updateSalary(id: string, salaryData: any, userId: string, requestingUser?: IUser) {
+    const employee = await this.getEmployeeById(id, requestingUser);
 
     // Add current salary to history
     if (employee.salaryInfo.basicSalary) {
@@ -290,8 +370,8 @@ export class EmployeeService {
   }
 
   // Assign components
-  static async assignComponents(id: string, components: any, userId: string) {
-    const employee = await this.getEmployeeById(id);
+  static async assignComponents(id: string, components: any, userId: string, requestingUser?: IUser) {
+    const employee = await this.getEmployeeById(id, requestingUser);
 
     if (!employee.assignedComponents) {
       employee.assignedComponents = { earnings: [], deductions: [] };
@@ -330,8 +410,8 @@ export class EmployeeService {
   }
 
   // Terminate employee
-  static async terminateEmployee(id: string, terminationData: any, userId: string) {
-    const employee = await this.getEmployeeById(id);
+  static async terminateEmployee(id: string, terminationData: any, userId: string, requestingUser?: IUser) {
+    const employee = await this.getEmployeeById(id, requestingUser);
 
     if (employee.status === 'inactive') {
       throw errors.validation('Employee is already inactive');
@@ -354,8 +434,8 @@ export class EmployeeService {
   }
 
   // Link employee to user
-  static async linkToUser(employeeId: string, linkUserId: string, currentUserId: string) {
-    const employee = await this.getEmployeeById(employeeId);
+  static async linkToUser(employeeId: string, linkUserId: string, currentUserId: string, requestingUser?: IUser) {
+    const employee = await this.getEmployeeById(employeeId, requestingUser);
 
     // Check if user exists
     const user = await User.findById(linkUserId);
@@ -384,8 +464,8 @@ export class EmployeeService {
   }
 
   // Unlink employee from user
-  static async unlinkFromUser(employeeId: string, currentUserId: string) {
-    const employee = await this.getEmployeeById(employeeId);
+  static async unlinkFromUser(employeeId: string, currentUserId: string, requestingUser?: IUser) {
+    const employee = await this.getEmployeeById(employeeId, requestingUser);
 
     if (!employee.userId) {
       throw errors.validation('Employee is not linked to any user');
@@ -402,7 +482,7 @@ export class EmployeeService {
   }
 
   // Get employees by pay cycle
-  static async getByPayCycle(payCycleId: string, activeOnly: boolean = true) {
+  static async getByPayCycle(payCycleId: string, activeOnly: boolean = true, requestingUser?: IUser) {
     const filter: any = {
       'salaryInfo.payCycleId': new Types.ObjectId(payCycleId),
     };
@@ -411,7 +491,10 @@ export class EmployeeService {
       filter.status = 'active';
     }
 
-    const employees = await Employee.find(filter)
+    const scoped = mergeCompanyFilter(filter, requestingUser);
+
+    const employees = await Employee.find(scoped)
+      .populate('companyId', 'code name')
       .populate('salaryInfo.payCycleId')
       .populate('assignedComponents.earnings.componentId')
       .populate('assignedComponents.deductions.componentId')
@@ -421,7 +504,7 @@ export class EmployeeService {
   }
 
   // Get employees for dropdown (minimal data)
-  static async getEmployeesForDropdown(query: any = {}) {
+  static async getEmployeesForDropdown(query: any = {}, requestingUser?: IUser) {
     const filter: any = { status: 'active' };
 
     if (query.search) {
@@ -431,8 +514,10 @@ export class EmployeeService {
       ];
     }
 
-    const employees = await Employee.find(filter)
-      .select('employeeCode fullName email employment.department')
+    const scoped = mergeCompanyFilter(filter, requestingUser);
+
+    const employees = await Employee.find(scoped)
+      .select('employeeCode fullName email employment.department companyId')
       .sort({ fullName: 1 })
       .limit(50);
 
@@ -440,7 +525,7 @@ export class EmployeeService {
   }
 
   // Get document expiry report for active employees only
-  static async getDocumentExpiry(daysAhead: number = 90) {
+  static async getDocumentExpiry(daysAhead: number = 90, requestingUser?: IUser) {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const cutoff = new Date(today);
@@ -456,7 +541,10 @@ export class EmployeeService {
       .lean();
     const activeStatus = activeLookup?.code?.toString().toLowerCase() ?? 'active';
 
-    const employees = await Employee.find({ status: activeStatus })
+    const baseEmpFilter = { status: activeStatus };
+    const empFilter = mergeCompanyFilter(baseEmpFilter, requestingUser);
+
+    const employees = await Employee.find(empFilter)
       .select('_id employeeCode firstName lastName fullName employment.department passport visas emiratesIds medicalInsurances laborCard drivingLicense identifications')
       .lean();
 
@@ -539,8 +627,23 @@ export class EmployeeService {
   }
 
   // Get employee statistics
-  static async getStatistics() {
+  static async getStatistics(requestingUser?: IUser) {
+    const scope = getAccessibleCompanyIds(requestingUser);
+    const companyMatch: Record<string, unknown> = {};
+    if (scope !== 'all') {
+      if (scope.length === 0) {
+        return {
+          byStatus: [],
+          byDepartment: [],
+          byEmploymentType: [],
+          totalActive: 0,
+        };
+      }
+      companyMatch.companyId = { $in: scope };
+    }
+
     const stats = await Employee.aggregate([
+      ...(Object.keys(companyMatch).length ? [{ $match: companyMatch }] : []),
       {
         $facet: {
           byStatus: [

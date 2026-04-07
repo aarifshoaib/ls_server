@@ -24,6 +24,7 @@ import lookupValueRoutes from './lookupValue.routes';
 import earningDeductionRoutes from './earningDeduction.routes';
 import payCycleRoutes from './payCycle.routes';
 import employeeRoutes from './employee.routes';
+import companyRoutes from './company.routes';
 import employeeReportsRoutes from './employeeReports.routes';
 import { EmployeeController } from '../controllers/employee.controller';
 import advanceRoutes from './advance.routes';
@@ -80,6 +81,7 @@ router.use('/shop-visits', shopVisitRoutes);
 router.use('/lookup-values', lookupValueRoutes);
 router.use('/earning-deductions', earningDeductionRoutes);
 router.use('/pay-cycles', payCycleRoutes);
+router.use('/companies', companyRoutes);
 router.use('/employees', employeeRoutes);
 // Explicit route for document-expiry - must be before sub-router for reliable matching
 router.get(

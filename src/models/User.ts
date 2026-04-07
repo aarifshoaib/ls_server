@@ -80,6 +80,13 @@ const userSchema = new Schema<IUser>(
       type: Schema.Types.ObjectId,
       ref: 'Warehouse',
     },
+    /** Payroll / HR: companies this user may access (empty = none unless super_admin/admin) */
+    companyIds: [
+      {
+        type: Schema.Types.ObjectId,
+        ref: 'Company',
+      },
+    ],
     territories: [String],
     status: {
       type: String,
