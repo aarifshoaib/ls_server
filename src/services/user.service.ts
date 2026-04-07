@@ -102,8 +102,17 @@ export class UserService {
     const { hash: passwordHash, salt } = await this.hashPassword(data.password);
     const employeeId = data.employeeId || this.generateEmployeeId();
 
+    const { password: _pw, companyIds: rawCompanyIds, ...rest } = data as any;
+    let companyIds: Types.ObjectId[] | undefined;
+    if (Array.isArray(rawCompanyIds) && rawCompanyIds.length > 0) {
+      companyIds = rawCompanyIds.map((id: string) =>
+        typeof id === 'string' ? new Types.ObjectId(id) : id
+      );
+    }
+
     const user = new User({
-      ...data,
+      ...rest,
+      companyIds,
       employeeId,
       passwordHash,
       passwordSalt: salt,
@@ -129,7 +138,13 @@ export class UserService {
 
   static async update(id: string, data: any, updatedBy: Types.ObjectId) {
     // Remove password related fields from update data
-    const { password, passwordHash, passwordSalt, ...updateData } = data;
+    const { password, passwordHash, passwordSalt, companyIds: rawCompanyIds, ...updateData } = data;
+
+    if (Array.isArray(rawCompanyIds)) {
+      (updateData as any).companyIds = rawCompanyIds.map((id: string) =>
+        typeof id === 'string' ? new Types.ObjectId(id) : id
+      );
+    }
 
     // Update fullName if firstName or lastName changed
     if (updateData.firstName || updateData.lastName) {
