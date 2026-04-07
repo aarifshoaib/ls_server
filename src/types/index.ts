@@ -17,6 +17,8 @@ export interface IUser extends Document {
   permissions: string[];
   department?: string;
   warehouseId?: Types.ObjectId;
+  /** Companies this user can access for payroll/employee data */
+  companyIds?: Types.ObjectId[];
   territories?: string[];
   status: UserStatus;
   lastLogin?: Date;
@@ -1239,6 +1241,7 @@ export interface IPayCycle extends Document {
 // Employee Types
 export interface IEmployee extends Document {
   _id: Types.ObjectId;
+  companyId?: Types.ObjectId;
   employeeCode: string;
   userId?: Types.ObjectId;
   firstName: string;

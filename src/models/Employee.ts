@@ -3,10 +3,14 @@ import { IEmployee } from '../types';
 
 const employeeSchema = new Schema<IEmployee>(
   {
+    companyId: {
+      type: Schema.Types.ObjectId,
+      ref: 'Company',
+      index: true,
+    },
     employeeCode: {
       type: String,
       required: true,
-      unique: true,
       trim: true,
       uppercase: true,
       index: true,
@@ -398,7 +402,8 @@ employeeSchema.pre('save', function(next) {
   next();
 });
 
-// Indexes
+// Indexes — employee code unique per company
+employeeSchema.index({ companyId: 1, employeeCode: 1 }, { unique: true, sparse: true });
 employeeSchema.index({ 'employment.department': 1, status: 1 });
 employeeSchema.index({ 'employment.designation': 1, status: 1 });
 employeeSchema.index({ 'salaryInfo.payCycleId': 1, status: 1 });

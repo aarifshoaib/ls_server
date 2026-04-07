@@ -24,6 +24,7 @@
     "seed-spices-powder": "ts-node src/scripts/seedSpicesPowderProducts.ts",
     "seed-all-products": "ts-node src/scripts/seedPulsesBeansProducts.ts && ts-node src/scripts/seedSpicesPowderProducts.ts",
     "migrate:stock-to-pieces": "ts-node src/scripts/migrateStockToPieces.ts",
+    "migrate:companies": "ts-node src/scripts/migrateCompanies.ts",
     "lint": "eslint . --ext .ts",
     "test": "jest"
   },
