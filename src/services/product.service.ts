@@ -21,15 +21,23 @@ export class ProductService {
       filter['category._id'] = new Types.ObjectId(query.categoryId);
     }
 
-    // Search filter
+    // Search filter (regex-escape user input for safe $regex)
     if (query.search) {
-      filter.$or = [
-        { name: { $regex: query.search, $options: 'i' } },
-        { sku: { $regex: query.search, $options: 'i' } },
-        { 'variants.variantSku': { $regex: query.search, $options: 'i' } },
-        { 'variants.barcode': { $regex: query.search, $options: 'i' } },
-        { 'variants.itemCode': { $regex: query.search, $options: 'i' } },
-      ];
+      const raw = String(query.search).trim();
+      if (raw) {
+        const escaped = raw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        filter.$or = [
+          { name: { $regex: escaped, $options: 'i' } },
+          { nameAr: { $regex: escaped, $options: 'i' } },
+          { sku: { $regex: escaped, $options: 'i' } },
+          { 'category.name': { $regex: escaped, $options: 'i' } },
+          { tags: { $regex: escaped, $options: 'i' } },
+          { 'variants.name': { $regex: escaped, $options: 'i' } },
+          { 'variants.variantSku': { $regex: escaped, $options: 'i' } },
+          { 'variants.barcode': { $regex: escaped, $options: 'i' } },
+          { 'variants.itemCode': { $regex: escaped, $options: 'i' } },
+        ];
+      }
     }
 
     // Low stock filter
