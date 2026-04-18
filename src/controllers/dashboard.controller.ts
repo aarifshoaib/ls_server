@@ -3,6 +3,7 @@ import { IAuthRequest } from '../types';
 import Order from '../models/Order';
 import Customer from '../models/Customer';
 import Product from '../models/Product';
+import { InventoryService } from '../services/inventory.service';
 
 export class DashboardController {
   static async getStats(_req: IAuthRequest, res: Response, next: NextFunction) {
@@ -16,7 +17,7 @@ export class DashboardController {
         totalProducts,
         monthlyOrders,
         pendingOrders,
-        lowStockCount,
+        inventorySummary,
       ] = await Promise.all([
         Order.countDocuments({ isDeleted: false }),
         Customer.countDocuments({ status: 'active' }),
@@ -29,15 +30,7 @@ export class DashboardController {
           status: { $in: ['pending', 'confirmed'] },
           isDeleted: false
         }),
-        Product.countDocuments({
-          status: 'active',
-          variants: {
-            $elemMatch: {
-              status: 'active',
-              $expr: { $lte: ['$stock.quantity', '$stock.reorderLevel'] },
-            },
-          },
-        }),
+        InventoryService.getInventorySummary(),
       ]);
 
       // Get monthly sales
@@ -64,7 +57,8 @@ export class DashboardController {
         totalProducts,
         monthlyOrders,
         pendingOrders,
-        lowStockCount,
+        lowStockCount: inventorySummary.lowStockVariants,
+        totalStockPieces: inventorySummary.totalQuantity,
         monthlySales: salesData[0]?.totalSales || 0,
         monthlySalesCount: salesData[0]?.orderCount || 0,
       };

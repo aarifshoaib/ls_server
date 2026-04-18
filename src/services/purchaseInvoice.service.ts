@@ -3,6 +3,7 @@ import PurchaseInvoice from '../models/PurchaseInvoice';
 import PurchaseOrder from '../models/PurchaseOrder';
 import Vendor from '../models/Vendor';
 import Product from '../models/Product';
+import StockBatch from '../models/StockBatch';
 import ApprovalConfig from '../models/ApprovalConfig';
 import { StockBatchService } from './stockBatch.service';
 import { errors } from '../utils/errors';
@@ -30,6 +31,68 @@ const resolveApproverRoles = (fromConfig?: string[]): UserRole[] => {
   }
   return DEFAULT_PI_APPROVER_ROLES;
 };
+
+/** Same product + variant + batch on one invoice must use one expiry (matches StockBatch.receive rules). */
+function validatePiItemsIntraInvoiceBatchExpiry(items: any[]): void {
+  const byKey = new Map<string, string>();
+  for (const item of items) {
+    const batchNumber = (item.batchNumber || '').toString().trim();
+    if (!batchNumber) continue;
+    const pid = item.productId?.toString?.() ?? String(item.productId);
+    const vid = item.variantId?.toString?.() ?? String(item.variantId);
+    if (!pid || !vid) continue;
+    const expiryDate = item.expiryDate ? new Date(item.expiryDate) : null;
+    if (!expiryDate || isNaN(expiryDate.getTime())) continue;
+    const day = expiryDate.toISOString().split('T')[0];
+    const key = `${pid}:${vid}:${batchNumber}`;
+    const prev = byKey.get(key);
+    if (prev && prev !== day) {
+      const name = item.productName || 'item';
+      throw errors.validation(
+        `Batch ${batchNumber} for ${name} is used more than once on this invoice with different expiry dates (${prev} vs ${day}). Use the same expiry for that batch on every line, or use different batch numbers.`
+      );
+    }
+    byKey.set(key, day);
+  }
+}
+
+/** Same rules as inventory receive: intra-invoice batch/expiry, line fields, conflict with existing StockBatch. */
+async function validatePiItemsForStockReceive(items: any[]): Promise<void> {
+  if (!items?.length) {
+    throw errors.validation('At least one item is required');
+  }
+  validatePiItemsIntraInvoiceBatchExpiry(items);
+  for (const item of items) {
+    const batchNumber = (item.batchNumber || '').toString().trim();
+    const expiryDate = item.expiryDate ? new Date(item.expiryDate) : null;
+    const name = item.productName || 'item';
+    if (!batchNumber) {
+      throw errors.validation(`Batch number is required for ${name}`);
+    }
+    if (!expiryDate || isNaN(expiryDate.getTime())) {
+      throw errors.validation(`Valid expiry date is required for ${name}`);
+    }
+    const productId = item.productId;
+    const variantId = item.variantId;
+    if (!productId || !variantId) {
+      throw errors.validation(`Product and variant are required for ${name}`);
+    }
+    const batch = await StockBatch.findOne({
+      productId,
+      variantId,
+      batchNumber,
+    });
+    if (batch) {
+      const existingExpiry = new Date(batch.expiryDate).toISOString().split('T')[0];
+      const newExpiry = new Date(expiryDate).toISOString().split('T')[0];
+      if (existingExpiry !== newExpiry) {
+        throw errors.validation(
+          `Batch ${batchNumber} already exists for this product/variant with expiry ${existingExpiry}. Use the same expiry date or a different batch number.`
+        );
+      }
+    }
+  }
+}
 
 export class PurchaseInvoiceService {
   static async getAll(query: Record<string, unknown>, pagination: { page: number; limit: number; skip: number }) {
@@ -131,6 +194,8 @@ export class PurchaseInvoiceService {
       };
     });
 
+    await validatePiItemsForStockReceive(items);
+
     const subtotal = items.reduce((s: number, i: any) => {
       const receiveUom = i.receiveUom || 'unit';
       const ppu = pcsPerUnitMap.get(`${i.productId}:${i.variantId}`) || 1;
@@ -193,6 +258,7 @@ export class PurchaseInvoiceService {
         const lineTotal = lineSubtotal + taxAmount;
         return { ...item, receiveUom, batchNumber, expiryDate, unitPrice, taxRate, taxAmount, lineTotal };
       });
+      await validatePiItemsForStockReceive(items);
       pi.items = items;
       pi.pricing = {
         subtotal: items.reduce((s: number, i: any) => {
@@ -217,6 +283,8 @@ export class PurchaseInvoiceService {
     if (pi.status !== 'draft') {
       throw errors.validation('Can only submit draft Purchase Invoices');
     }
+
+    await validatePiItemsForStockReceive(pi.items as any[]);
 
     const approvalConfig = await getPIApprovalConfig();
     const approvalRequired = !!approvalConfig?.isActive;
@@ -257,6 +325,8 @@ export class PurchaseInvoiceService {
     if (!approverRoles.includes(userRole as UserRole)) {
       throw errors.forbidden('approve this purchase invoice');
     }
+
+    await validatePiItemsForStockReceive(pi.items as any[]);
 
     const decisions = pi.approval.decisions || [];
     const alreadyDecided = decisions.some((d: any) => d.approverId?.toString() === userId);
@@ -321,6 +391,8 @@ export class PurchaseInvoiceService {
       throw errors.validation('Purchase Invoice must be approved before receiving');
     }
 
+    await validatePiItemsForStockReceive(pi.items as any[]);
+
     const session = await mongoose.startSession();
     session.startTransaction();
 
@@ -336,13 +408,7 @@ export class PurchaseInvoiceService {
 
       for (const item of pi.items) {
         const batchNumber = (item.batchNumber || '').toString().trim();
-        const expiryDate = item.expiryDate ? new Date(item.expiryDate) : null;
-        if (!batchNumber) {
-          throw errors.validation(`Batch number missing for ${item.productName || 'item'} - cannot receive into inventory`);
-        }
-        if (!expiryDate || isNaN(expiryDate.getTime())) {
-          throw errors.validation(`Valid expiry date missing for ${item.productName || 'item'} - cannot receive into inventory`);
-        }
+        const expiryDate = new Date(item.expiryDate);
         const receiveUom = (item as any).receiveUom || 'unit';
         await StockBatchService.addStockFromPurchase(
           item.productId as Types.ObjectId,

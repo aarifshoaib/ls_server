@@ -508,6 +508,11 @@ export interface IOrder extends Document {
   tags: string[];
   linkedOrders: ILinkedOrder[];
   batchSelections?: Array<{ productId: Types.ObjectId; variantId: Types.ObjectId; allocations: Array<{ batchId: Types.ObjectId; quantity: number }> }>;
+  /** Fulfillment sub-order (approved lines + batches) — operational copy for status pipeline; stock on parent. */
+  sourceOrderId?: Types.ObjectId;
+  sourceOrderNumber?: string;
+  subOrderSequence?: number;
+  isFulfillmentSubOrder?: boolean;
   assignedTo?: Types.ObjectId;
   createdBy?: Types.ObjectId;
   updatedBy?: Types.ObjectId;
@@ -542,6 +547,8 @@ export interface IOrderItem {
   variantName: string;
   displaySize: string;
   quantity: number;
+  /** Cumulative approved-to-stock qty (same UOM as sellBy); demand is quantity. */
+  releasedQuantity?: number;
   sellBy?: 'unit' | 'pcs';
   pcsPerUnit?: number;
   unitPrice: number;
@@ -608,9 +615,26 @@ export interface IOrderApprovalDecision {
   decidedAt: Date;
 }
 
+export interface IOrderApprovalRemovedLine {
+  productId: Types.ObjectId;
+  variantId: Types.ObjectId;
+  sku: string;
+  variantSku: string;
+  name: string;
+  variantName: string;
+  displaySize: string;
+  quantity: number;
+  sellBy?: string;
+  pcsPerUnit?: number;
+  unitPrice: number;
+  removalType: 'line_removed' | 'qty_reduced';
+  originalQuantity?: number;
+  approvedQuantity?: number;
+}
+
 export interface IOrderApproval {
   required: boolean;
-  status: 'not_required' | 'pending' | 'approved' | 'rejected';
+  status: 'not_required' | 'pending' | 'partial' | 'approved' | 'rejected';
   approverRoles: UserRole[];
   submittedAt?: Date;
   approvedAt?: Date;
@@ -619,6 +643,7 @@ export interface IOrderApproval {
   rejectedBy?: Types.ObjectId;
   decisionNotes?: string;
   decisions: IOrderApprovalDecision[];
+  removedItemsSnapshot?: IOrderApprovalRemovedLine[];
 }
 
 export interface IFulfillment {

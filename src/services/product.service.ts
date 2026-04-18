@@ -160,18 +160,36 @@ export class ProductService {
     return { message: 'Product deleted successfully' };
   }
 
-  // Get low stock products
+  // Get low stock products (reorder level is in selling units; quantity is in pieces)
   static async getLowStockProducts() {
-    const products = await Product.find({
-      status: 'active',
-      variants: {
-        $elemMatch: {
-          status: 'active',
-          $expr: { $lte: ['$stock.quantity', '$stock.reorderLevel'] },
+    const idRows = await Product.aggregate<{ _id: Types.ObjectId }>([
+      { $match: { status: 'active' } },
+      { $unwind: '$variants' },
+      { $match: { 'variants.status': 'active' } },
+      {
+        $addFields: {
+          ppu: { $max: [{ $ifNull: ['$variants.salesUom.pcsPerUnit', 1] }, 1] },
+          qtyPieces: { $ifNull: ['$variants.stock.quantity', 0] },
+          reorder: { $ifNull: ['$variants.stock.reorderLevel', 0] },
         },
       },
-    });
-
-    return products;
+      { $addFields: { qtyInUnits: { $divide: ['$qtyPieces', '$ppu'] } } },
+      {
+        $match: {
+          $expr: {
+            $or: [
+              { $eq: ['$qtyPieces', 0] },
+              {
+                $and: [{ $gt: ['$qtyPieces', 0] }, { $lte: ['$qtyInUnits', '$reorder'] }],
+              },
+            ],
+          },
+        },
+      },
+      { $group: { _id: '$_id' } },
+    ]);
+    const ids = idRows.map((r) => r._id);
+    if (!ids.length) return [];
+    return Product.find({ _id: { $in: ids } }).sort({ name: 1 });
   }
 }
