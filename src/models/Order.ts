@@ -66,6 +66,10 @@ const orderItemSchema = new Schema<IOrderItem>({
     type: Number,
     min: 1,
   },
+  pricePerPiece: {
+    type: Number,
+    min: 0,
+  },
   unitPrice: {
     type: Number,
     required: true,
@@ -75,6 +79,10 @@ const orderItemSchema = new Schema<IOrderItem>({
     default: 0,
   },
   discountAmount: {
+    type: Number,
+    default: 0,
+  },
+  customerDiscountAmount: {
     type: Number,
     default: 0,
   },
@@ -118,6 +126,7 @@ const orderPricingSchema = new Schema<IOrderPricing>(
   {
     subtotal: { type: Number, required: true },
     itemDiscountTotal: { type: Number, default: 0 },
+    customerDiscountTotal: { type: Number, default: 0 },
     orderDiscount: {
       type: {
         type: String,

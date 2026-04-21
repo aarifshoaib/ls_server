@@ -7,7 +7,13 @@ import CustomerLedger from '../models/CustomerLedger';
 import ApprovalConfig from '../models/ApprovalConfig';
 import { errors } from '../utils/errors';
 import { parsePagination, buildPaginatedResponse, addDays } from '../utils/helpers';
-import { buildPricedOrderItems } from '../utils/orderPricing';
+import { ORDER_VAT_PERCENT } from '../utils/constants';
+import {
+  buildPricedOrderItems,
+  buildFulfillmentReleaseFromParentScaled,
+  enrichMissingUomFromProduct,
+  rollupSubOrderPricingFromPricedSubset,
+} from '../utils/orderPricing';
 import { NumberingService } from '../services/numbering.service';
 import { InventoryService } from '../services/inventory.service';
 import { StockBatchService } from '../services/stockBatch.service';
@@ -194,6 +200,9 @@ async function createFulfillmentSubOrderDocument(
     delete o._id;
     delete o.inventoryTransactionId;
     o.inventoryDeducted = true;
+    const q = Number(o.quantity) || 0;
+    // Entire line on a fulfillment doc is this release; avoid "Released 0 / Remaining N" on detail UI.
+    o.releasedQuantity = q;
     return o;
   };
 
@@ -439,6 +448,8 @@ export class OrderController {
         orderDiscount: odIn,
         shippingCharge: req.body.pricing?.shippingCharge,
         shippingDiscount: req.body.pricing?.shippingDiscount,
+        customerDiscountPercent: Number(customer.discountPercent) || 0,
+        taxRateDefault: ORDER_VAT_PERCENT,
       });
 
       // Approval: config drives who needs sign-off; field sales roles always submit as draft first so
@@ -580,6 +591,8 @@ export class OrderController {
         orderDiscount: odIn,
         shippingCharge: req.body.pricing?.shippingCharge,
         shippingDiscount: req.body.pricing?.shippingDiscount,
+        customerDiscountPercent: Number(customer.discountPercent) || 0,
+        taxRateDefault: ORDER_VAT_PERCENT,
       });
 
       order.customerId = customer._id as any;
@@ -814,21 +827,85 @@ export class OrderController {
               }
             : null;
 
-      const rawForPrice = normalizedRelease.map((r) => {
-        const src = order.items[r.itemIndex] as any;
-        const p = src?.toObject ? src.toObject() : { ...src };
-        return { ...p, quantity: r.quantity };
+      const releaseProductIds = [
+        ...new Set(
+          normalizedRelease
+            .map((r) => {
+              const src = order.items[r.itemIndex] as any;
+              if (!src) return undefined;
+              const pid = src.productId?.toString?.() ?? src.productId;
+              return pid ? String(pid) : undefined;
+            })
+            .filter(Boolean)
+        ),
+      ] as string[];
+
+      const releaseProducts =
+        releaseProductIds.length > 0
+          ? await Product.find({ _id: { $in: releaseProductIds } })
+              .session(session)
+              .lean()
+          : [];
+      const productById = new Map(releaseProducts.map((p: any) => [String(p._id), p]));
+
+      const shipCh = includeShipping
+        ? Number(req.body.pricing?.shippingCharge ?? order.pricing?.shippingCharge) || 0
+        : 0;
+      const shipDisc = includeShipping
+        ? Number(req.body.pricing?.shippingDiscount ?? order.pricing?.shippingDiscount) || 0
+        : 0;
+
+      const approvalCustomer = await Customer.findById(order.customerId)
+        .select('discountPercent')
+        .session(session)
+        .lean();
+      const approvalCustDisc = Number((approvalCustomer as any)?.discountPercent ?? 0);
+
+      const parentLinesHaveCustomerDisc = (order.items as any[]).some(
+        (it: any) => Number(it.customerDiscountAmount) > 0
+      );
+
+      /** Repricing only release lines reallocates order discount across those lines → wrong tax vs parent. */
+      const partialLineRelease = normalizedRelease.some((r) => {
+        const pl = order.items[r.itemIndex] as any;
+        return Number(r.quantity) < (Number(pl?.quantity) || 0);
       });
 
-      const { items: pricedRelease, pricing: subPricing } = buildPricedOrderItems(rawForPrice, {
-        orderDiscount: odIn,
-        shippingCharge: includeShipping
-          ? Number(req.body.pricing?.shippingCharge ?? order.pricing?.shippingCharge) || 0
-          : 0,
-        shippingDiscount: includeShipping
-          ? Number(req.body.pricing?.shippingDiscount ?? order.pricing?.shippingDiscount) || 0
-          : 0,
-      });
+      let pricedRelease: any[];
+      let subPricing: any;
+
+      if (approvalCustDisc > 0 && !parentLinesHaveCustomerDisc && !partialLineRelease) {
+        const rawFullOrder = (order.items as any[]).map((src: any, itemIndex: number) => {
+          const p = src?.toObject ? src.toObject() : { ...src };
+          const rel = normalizedRelease.find((nr) => nr.itemIndex === itemIndex);
+          const qty = rel ? rel.quantity : Number(p.quantity) || 0;
+          const base = { ...p, quantity: qty };
+          const pid = base.productId?.toString?.() ?? String(base.productId);
+          const prod = productById.get(pid);
+          return prod ? enrichMissingUomFromProduct(base, prod) : base;
+        });
+        const recomputed = buildPricedOrderItems(rawFullOrder, {
+          orderDiscount: odIn,
+          shippingCharge: shipCh,
+          shippingDiscount: shipDisc,
+          customerDiscountPercent: approvalCustDisc,
+          taxRateDefault: ORDER_VAT_PERCENT,
+        });
+        pricedRelease = normalizedRelease.map((r) => recomputed.items[r.itemIndex]);
+        subPricing = rollupSubOrderPricingFromPricedSubset(recomputed, pricedRelease, shipCh, shipDisc);
+      } else {
+        const parentPricingPlain =
+          (order.pricing as any)?.toObject?.() ?? (order.pricing ? { ...(order.pricing as any) } : undefined);
+        const scaled = buildFulfillmentReleaseFromParentScaled(order.items as any[], normalizedRelease, {
+          includeShipping,
+          shippingCharge: shipCh,
+          shippingDiscount: shipDisc,
+          productById,
+          parentHeaderPricing: includeShipping ? parentPricingPlain : undefined,
+        });
+        pricedRelease = scaled.items;
+        subPricing = scaled.pricing;
+      }
 
       if (req.body.shippingAddress && typeof req.body.shippingAddress === 'object') {
         order.shippingAddress = {
@@ -1224,7 +1301,8 @@ export class OrderController {
         throw errors.notFound('Order');
       }
 
-      const pdfBuffer = await PDFService.generateOrderPDF(order);
+      const plainOrder = order.toObject({ flattenMaps: true });
+      const pdfBuffer = await PDFService.generateOrderPDF(plainOrder);
 
       res.setHeader('Content-Type', 'application/pdf');
       res.setHeader(
@@ -1252,7 +1330,8 @@ export class OrderController {
         throw errors.notFound('Order');
       }
 
-      const pdfBuffer = await PDFService.generateDeliveryNotePDF(order);
+      const plainOrder = order.toObject({ flattenMaps: true });
+      const pdfBuffer = await PDFService.generateDeliveryNotePDF(plainOrder);
 
       res.setHeader('Content-Type', 'application/pdf');
       res.setHeader(

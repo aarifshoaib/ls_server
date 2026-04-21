@@ -25,6 +25,10 @@
     "seed-all-products": "ts-node src/scripts/seedPulsesBeansProducts.ts && ts-node src/scripts/seedSpicesPowderProducts.ts",
     "migrate:stock-to-pieces": "ts-node src/scripts/migrateStockToPieces.ts",
     "migrate:companies": "ts-node src/scripts/migrateCompanies.ts",
+    "migrate:order-pricing": "ts-node src/scripts/recomputeOrderPricing.ts",
+    "migrate:fulfillment-sub-order-lines": "ts-node src/scripts/fixFulfillmentSubOrderPricing.ts",
+    "migrate:correct-fulfillment-ar": "ts-node src/scripts/correctFulfillmentGrandTotalsAndLedger.ts",
+    "migrate:recalc-outstanding-from-orders": "ts-node src/scripts/recalculateCustomerOutstandingFromOrders.ts",
     "lint": "eslint . --ext .ts",
     "test": "jest"
   },
