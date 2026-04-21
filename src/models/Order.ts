@@ -52,6 +52,12 @@ const orderItemSchema = new Schema<IOrderItem>({
     type: Number,
     required: true,
   },
+  /** Cumulative qty (same UOM as sellBy) released from stock via approval; demand stays in quantity. */
+  releasedQuantity: {
+    type: Number,
+    default: 0,
+    min: 0,
+  },
   sellBy: {
     type: String,
     enum: ['unit', 'pcs'],
@@ -59,6 +65,10 @@ const orderItemSchema = new Schema<IOrderItem>({
   pcsPerUnit: {
     type: Number,
     min: 1,
+  },
+  pricePerPiece: {
+    type: Number,
+    min: 0,
   },
   unitPrice: {
     type: Number,
@@ -69,6 +79,10 @@ const orderItemSchema = new Schema<IOrderItem>({
     default: 0,
   },
   discountAmount: {
+    type: Number,
+    default: 0,
+  },
+  customerDiscountAmount: {
     type: Number,
     default: 0,
   },
@@ -112,6 +126,7 @@ const orderPricingSchema = new Schema<IOrderPricing>(
   {
     subtotal: { type: Number, required: true },
     itemDiscountTotal: { type: Number, default: 0 },
+    customerDiscountTotal: { type: Number, default: 0 },
     orderDiscount: {
       type: {
         type: String,
@@ -212,7 +227,7 @@ const orderApprovalSchema = new Schema(
     },
     status: {
       type: String,
-      enum: ['not_required', 'pending', 'approved', 'rejected'],
+      enum: ['not_required', 'pending', 'partial', 'approved', 'rejected'],
       default: 'not_required',
       index: true,
     },
@@ -232,6 +247,31 @@ const orderApprovalSchema = new Schema(
     decisions: {
       type: [orderApprovalDecisionSchema],
       default: [],
+    },
+    /** Lines removed or qty reduced during approval (for follow-up / audit). */
+    removedItemsSnapshot: {
+      type: [
+        new Schema(
+          {
+            productId: { type: Schema.Types.ObjectId, ref: 'Product' },
+            variantId: Schema.Types.ObjectId,
+            sku: String,
+            variantSku: String,
+            name: String,
+            variantName: String,
+            displaySize: String,
+            quantity: Number,
+            sellBy: String,
+            pcsPerUnit: Number,
+            unitPrice: Number,
+            removalType: { type: String, enum: ['line_removed', 'qty_reduced'] },
+            originalQuantity: Number,
+            approvedQuantity: Number,
+          },
+          { _id: false }
+        ),
+      ],
+      default: undefined,
     },
   },
   { _id: false }
@@ -428,6 +468,18 @@ const orderSchema = new Schema<IOrder>(
         quantity: { type: Number, required: true, min: 1 },
       }],
     }],
+    /** Sales order this fulfillment sub-order was generated from (approve step). */
+    sourceOrderId: {
+      type: Schema.Types.ObjectId,
+      ref: 'Order',
+      index: true,
+    },
+    sourceOrderNumber: String,
+    subOrderSequence: { type: Number },
+    isFulfillmentSubOrder: {
+      type: Boolean,
+      default: false,
+    },
     assignedTo: {
       type: Schema.Types.ObjectId,
       ref: 'User',
@@ -466,6 +518,7 @@ orderSchema.index({ 'creditInfo.dueDate': 1 });
 orderSchema.index({ assignedTo: 1 });
 orderSchema.index({ 'items.productId': 1 });
 orderSchema.index({ 'items.variantId': 1 });
+orderSchema.index({ sourceOrderId: 1, subOrderSequence: 1 });
 
 const Order = mongoose.model<IOrder>('Order', orderSchema);
 

@@ -26,6 +26,30 @@ function getQuantityInPieces(item: any): number {
   return qty;
 }
 
+type BatchUsageStamp = {
+  batchId: Types.ObjectId;
+  batchNumber: string;
+  expiryDate?: Date;
+  pieces: number;
+};
+
+/** After batch deduction, persist batch on order lines (invoice / returns). Primary = batch that supplied the most pieces. */
+function stampBatchFieldsOnVariantLines(order: any, pid: string, vid: string, usage: BatchUsageStamp[]) {
+  if (!usage.length) return;
+  const lines = order.items.filter(
+    (i: any) => (i.productId?.toString?.() || i.productId) === pid && (i.variantId?.toString?.() || i.variantId) === vid
+  );
+  if (!lines.length) return;
+  const primary = usage.reduce((a, b) => (a.pieces >= b.pieces ? a : b));
+  for (const i of lines) {
+    i.batchId = primary.batchId;
+    i.batchNumber = primary.batchNumber;
+    if (primary.expiryDate) {
+      i.expiryDate = primary.expiryDate;
+    }
+  }
+}
+
 /**
  * Deduct inventory for order (called when order is delivered).
  * Uses batch-level deduction when batches exist; supports manual batch selection or FEFO.
@@ -64,10 +88,11 @@ export class InventoryService {
             `Batch allocation total (${allocTotalPieces} pcs) must equal order quantity (${orderQtyPieces} pcs) for ${item.name}`
           );
         }
+        const manualUsage: BatchUsageStamp[] = [];
         for (const a of manualAllocations) {
           const qtyPieces = Number(a.quantity) || 0;
           if (qtyPieces <= 0) continue;
-          await StockBatchService.deductFromBatch(
+          const { batch } = await StockBatchService.deductFromBatch(
             a.batchId,
             qtyPieces,
             order._id,
@@ -75,8 +100,15 @@ export class InventoryService {
             userId,
             session
           );
+          manualUsage.push({
+            batchId: batch._id as Types.ObjectId,
+            batchNumber: batch.batchNumber,
+            expiryDate: batch.expiryDate ? new Date(batch.expiryDate) : undefined,
+            pieces: qtyPieces,
+          });
         }
         for (const i of matchingItems) i.inventoryDeducted = true;
+        stampBatchFieldsOnVariantLines(order, pid, vid, manualUsage);
         continue;
       }
 
@@ -89,6 +121,7 @@ export class InventoryService {
           .filter((i: any) => (i.productId?.toString?.() || i.productId) === pid && (i.variantId?.toString?.() || i.variantId) === vid)
           .reduce((s: number, i: any) => s + getQuantityInPieces(i), 0);
         let remaining = needPieces;
+        const fefoUsage: BatchUsageStamp[] = [];
         for (const batch of batches) {
           if (remaining <= 0) break;
           const deduct = Math.min(remaining, batch.availableQuantity);
@@ -101,6 +134,12 @@ export class InventoryService {
             userId,
             session
           );
+          fefoUsage.push({
+            batchId: new Types.ObjectId((batch as any)._id.toString()),
+            batchNumber: String((batch as any).batchNumber ?? ''),
+            expiryDate: (batch as any).expiryDate ? new Date((batch as any).expiryDate) : undefined,
+            pieces: deduct,
+          });
           remaining -= deduct;
         }
         if (remaining > 0) {
@@ -115,6 +154,7 @@ export class InventoryService {
             i.inventoryDeducted = true;
           }
         }
+        stampBatchFieldsOnVariantLines(order, pid, vid, fefoUsage);
         continue;
       }
 
@@ -474,52 +514,79 @@ export class InventoryService {
     return transactions;
   }
 
-  // Get inventory summary
+  /**
+   * Catalog-wide stats. Stock is stored in pieces; reorderLevel is in selling units — same as Inventory UI.
+   */
   static async getInventorySummary() {
-    const summary = await Product.aggregate([
-      {
-        $match: { status: 'active' },
-      },
-      {
-        $unwind: '$variants',
-      },
-      {
-        $match: { 'variants.status': 'active' },
-      },
-      {
-        $group: {
-          _id: null,
-          totalProducts: { $sum: 1 },
-          totalQuantity: { $sum: '$variants.stock.quantity' },
-          totalValue: {
-            $sum: {
-              $multiply: ['$variants.stock.quantity', '$variants.price.basePrice'],
-            },
+    const [activeProductCount, rows] = await Promise.all([
+      Product.countDocuments({ status: 'active' }),
+      Product.aggregate([
+        { $match: { status: 'active' } },
+        { $unwind: '$variants' },
+        { $match: { 'variants.status': 'active' } },
+        {
+          $addFields: {
+            ppu: { $max: [{ $ifNull: ['$variants.salesUom.pcsPerUnit', 1] }, 1] },
+            qtyPieces: { $ifNull: ['$variants.stock.quantity', 0] },
+            reorder: { $ifNull: ['$variants.stock.reorderLevel', 0] },
           },
-          lowStockCount: {
-            $sum: {
-              $cond: [
-                { $lte: ['$variants.stock.quantity', '$variants.stock.reorderLevel'] },
-                1,
-                0,
-              ],
-            },
+        },
+        {
+          $addFields: {
+            qtyInUnits: { $divide: ['$qtyPieces', '$ppu'] },
           },
-          outOfStockCount: {
-            $sum: {
-              $cond: [{ $eq: ['$variants.stock.quantity', 0] }, 1, 0],
+        },
+        {
+          $group: {
+            _id: null,
+            totalVariants: { $sum: 1 },
+            totalQuantity: { $sum: '$qtyPieces' },
+            totalValue: {
+              $sum: {
+                $multiply: ['$qtyPieces', { $ifNull: ['$variants.price.basePrice', 0] }],
+              },
+            },
+            outOfStockVariants: { $sum: { $cond: [{ $eq: ['$qtyPieces', 0] }, 1, 0] } },
+            lowStockVariants: {
+              $sum: {
+                $cond: [
+                  {
+                    $and: [{ $gt: ['$qtyPieces', 0] }, { $lte: ['$qtyInUnits', '$reorder'] }],
+                  },
+                  1,
+                  0,
+                ],
+              },
+            },
+            inStockVariants: {
+              $sum: {
+                $cond: [
+                  {
+                    $and: [{ $gt: ['$qtyPieces', 0] }, { $gt: ['$qtyInUnits', '$reorder'] }],
+                  },
+                  1,
+                  0,
+                ],
+              },
             },
           },
         },
-      },
+      ]),
     ]);
 
-    return summary[0] || {
-      totalProducts: 0,
-      totalQuantity: 0,
-      totalValue: 0,
-      lowStockCount: 0,
-      outOfStockCount: 0,
+    const row = rows[0];
+    const low = row?.lowStockVariants ?? 0;
+    const out = row?.outOfStockVariants ?? 0;
+    return {
+      activeProductCount,
+      totalVariants: row?.totalVariants ?? 0,
+      totalQuantity: row?.totalQuantity ?? 0,
+      totalValue: row?.totalValue ?? 0,
+      inStockVariants: row?.inStockVariants ?? 0,
+      lowStockVariants: low,
+      outOfStockVariants: out,
+      lowStockCount: low,
+      outOfStockCount: out,
     };
   }
 }

@@ -135,7 +135,8 @@ export class StockBatchService {
     orderId: Types.ObjectId,
     orderNumber: string,
     userId: string,
-    session: mongoose.ClientSession
+    session: mongoose.ClientSession,
+    extraMetadata?: Record<string, unknown>
   ) {
     const batch = await StockBatch.findById(batchId).session(session);
     if (!batch) throw errors.notFound('Stock batch');
@@ -184,7 +185,11 @@ export class StockBatchService {
       referenceNumber: orderNumber,
       performedBy: userId,
       performedAt: new Date(),
-      metadata: { batchId: batch._id, batchNumber: batch.batchNumber },
+      metadata: {
+        batchId: batch._id,
+        batchNumber: batch.batchNumber,
+        ...(extraMetadata && typeof extraMetadata === 'object' ? extraMetadata : {}),
+      },
     });
     await transaction.save({ session });
 

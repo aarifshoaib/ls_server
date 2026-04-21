@@ -24,6 +24,7 @@ router.get('/:id', requirePermission('orders:read'), OrderController.getById);
 
 router.post('/', requirePermission('orders:create'), OrderController.create);
 
+// Register all /:id/... routes before bare PUT /:id so subpaths are never mistaken for an id segment.
 router.put(
 	'/:id/approve-create',
 	requireRole('accountant', 'admin', 'super_admin', 'hod'),
@@ -48,5 +49,11 @@ router.put(
 router.get('/:id/pdf', requirePermission('orders:read'), OrderController.downloadPDF);
 
 router.get('/:id/delivery-note', requirePermission('orders:read'), OrderController.downloadDeliveryNote);
+
+router.put(
+	'/:id',
+	requirePermission('orders:update', 'orders:create'),
+	OrderController.update
+);
 
 export default router;

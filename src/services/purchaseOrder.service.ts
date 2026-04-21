@@ -1,5 +1,6 @@
-import { Types } from 'mongoose';
+import mongoose, { Types } from 'mongoose';
 import PurchaseOrder from '../models/PurchaseOrder';
+import Product from '../models/Product';
 import Requisition from '../models/Requisition';
 import Vendor from '../models/Vendor';
 import ApprovalConfig from '../models/ApprovalConfig';
@@ -28,6 +29,180 @@ const resolveApproverRoles = (fromConfig?: string[]): UserRole[] => {
   }
   return DEFAULT_PO_APPROVER_ROLES;
 };
+
+function idsEqual(a: unknown, b: unknown): boolean {
+  if (a == null || b == null) return false;
+  try {
+    return new mongoose.Types.ObjectId(String(a)).equals(new mongoose.Types.ObjectId(String(b)));
+  } catch {
+    return String(a) === String(b);
+  }
+}
+
+/** Set pcsPerUnit + unitLabel from catalog when the variant has a pack size; otherwise leave unset. */
+async function enrichPurchaseOrderItemsWithPcsPerUnit(items: any[]): Promise<void> {
+  if (!items?.length) return;
+  const rawIds = items
+    .map((i: any) => String(i.productId?._id || i.productId || ''))
+    .filter((id: string) => id && Types.ObjectId.isValid(id));
+  const productIds = [...new Set(rawIds)].map((id) => new Types.ObjectId(id));
+  if (!productIds.length) return;
+
+  const products = await Product.find({ _id: { $in: productIds } }).select('variants').lean();
+  const productById = new Map(products.map((p: any) => [String(p._id), p]));
+
+  const pickVariant = (item: any, variants: any[]): any | undefined => {
+    if (!variants?.length) return undefined;
+    const vid = item.variantId?._id ?? item.variantId;
+    let v = variants.find((x: any) => idsEqual(x._id, vid));
+    if (!v && item.variantSku) v = variants.find((x: any) => String(x.variantSku) === String(item.variantSku));
+    if (!v && item.sku) v = variants.find((x: any) => String(x.variantSku) === String(item.sku));
+    return v;
+  };
+
+  const applyVariantPack = (item: any, v: any) => {
+    const ppu = v?.salesUom?.pcsPerUnit != null ? Number(v.salesUom.pcsPerUnit) : 0;
+    if (ppu > 0) {
+      item.pcsPerUnit = Math.floor(ppu);
+      item.unitLabel = String(v.salesUom?.unitLabel || 'unit').trim() || 'unit';
+    } else {
+      delete item.pcsPerUnit;
+      delete item.unitLabel;
+    }
+  };
+
+  for (const item of items) {
+    const pid = String(item.productId?._id || item.productId || '');
+    const pdoc = productById.get(pid);
+    let v = pickVariant(item, (pdoc?.variants || []) as any[]);
+    if (!v && Array.isArray((item.productId as any)?.variants)) {
+      v = pickVariant(item, (item.productId as any).variants);
+    }
+    if (v) applyVariantPack(item, v);
+    else {
+      delete item.pcsPerUnit;
+      delete item.unitLabel;
+    }
+  }
+
+  const stillMissing = items.filter((i: any) => !(Number(i.pcsPerUnit) > 0));
+  if (stillMissing.length) {
+    const variantIds = [
+      ...new Set(
+        stillMissing
+          .map((i: any) => i.variantId?._id ?? i.variantId)
+          .filter((id: any) => id != null && Types.ObjectId.isValid(String(id)))
+          .map((id: any) => new Types.ObjectId(String(id)))
+      ),
+    ];
+    if (variantIds.length) {
+      const byVariant = await Product.find({ 'variants._id': { $in: variantIds } }).select('variants').lean();
+      for (const p of byVariant) {
+        for (const v of (p as any).variants || []) {
+          if (!v?.salesUom?.pcsPerUnit || !(Number(v.salesUom.pcsPerUnit) > 0)) continue;
+          for (const item of stillMissing) {
+            if (idsEqual(v._id, item.variantId?._id ?? item.variantId)) {
+              applyVariantPack(item, v);
+            }
+          }
+        }
+      }
+    }
+  }
+
+  /** Prefer pack from populated `productId.variants` (same source as product UI) so PO lines never lag master after edits. */
+  for (const item of items) {
+    const emb = (item.productId as any)?.variants;
+    if (!Array.isArray(emb) || !emb.length) continue;
+    const v = pickVariant(item, emb as any[]);
+    if (v) applyVariantPack(item, v);
+  }
+
+  /** When catalog pack is known, derive integer pieces from stored unit progress for consistent PO display. */
+  for (const item of items) {
+    const ppu = Number(item.pcsPerUnit);
+    if (!(ppu > 0)) continue;
+    if (item.receivedPieces != null && item.receivedPieces !== undefined) continue;
+    const rq = Number(item.receivedQuantity);
+    if (!(rq > 0)) continue;
+    const qu = (item.quantityUom || 'unit') as string;
+    if (qu === 'pcs') {
+      item.receivedPieces = Math.round(rq);
+    } else {
+      item.receivedPieces = Math.round(rq * ppu);
+    }
+  }
+}
+
+/**
+ * API-only fields: split received stock into whole units + loose pcs from catalog pack.
+ * Uses `receivedPieces` when set, else derives from `receivedQuantity` × `pcsPerUnit` (unit lines) or `receivedQuantity` (pcs lines).
+ */
+function attachReceivedBreakdown(items: any[]): void {
+  if (!items?.length) return;
+  for (const item of items) {
+    delete item.receivedBreakdown;
+    const uom = (item.quantityUom || 'unit') as string;
+    const rq = Number(item.receivedQuantity) || 0;
+    const ppuRaw = Math.floor(Number(item.pcsPerUnit) || 0);
+    const pack = Math.max(1, ppuRaw);
+    const unitLabel = String(item.unitLabel || 'unit').trim() || 'unit';
+
+    let totalPcs: number | null = null;
+    if (item.receivedPieces != null && item.receivedPieces !== undefined && Number.isFinite(Number(item.receivedPieces))) {
+      totalPcs = Math.max(0, Math.round(Number(item.receivedPieces)));
+    } else if (uom === 'pcs') {
+      if (rq > 0) totalPcs = Math.max(0, Math.round(rq));
+    } else if (ppuRaw > 0 && rq > 0) {
+      totalPcs = Math.max(0, Math.round(rq * pack));
+    }
+
+    if (totalPcs == null) {
+      if (rq <= 0) {
+        item.receivedBreakdown = {
+          wholeUnits: 0,
+          loosePcs: 0,
+          pcsPerUnit: pack,
+          totalPcs: 0,
+          unitLabel,
+        };
+      }
+      continue;
+    }
+
+    if (uom === 'pcs') {
+      item.receivedBreakdown = {
+        wholeUnits: 0,
+        loosePcs: totalPcs,
+        pcsPerUnit: pack,
+        totalPcs,
+        unitLabel: unitLabel === 'unit' ? 'pcs' : unitLabel,
+      };
+      continue;
+    }
+
+    if (ppuRaw <= 0) {
+      item.receivedBreakdown = {
+        wholeUnits: totalPcs,
+        loosePcs: 0,
+        pcsPerUnit: 1,
+        totalPcs,
+        unitLabel,
+      };
+      continue;
+    }
+
+    const wholeUnits = Math.floor(totalPcs / pack);
+    const loosePcs = totalPcs % pack;
+    item.receivedBreakdown = {
+      wholeUnits,
+      loosePcs,
+      pcsPerUnit: pack,
+      totalPcs,
+      unitLabel,
+    };
+  }
+}
 
 export class PurchaseOrderService {
   static async getAll(query: Record<string, unknown>, pagination: { page: number; limit: number; skip: number }) {
@@ -65,9 +240,12 @@ export class PurchaseOrderService {
     const po = await PurchaseOrder.findById(id)
       .populate('vendorId')
       .populate('requisitionId')
-      .populate('items.productId', 'name sku');
+      .populate('items.productId', 'name sku variants');
     if (!po) throw errors.notFound('Purchase Order');
-    return po;
+    const plain = po.toObject({ flattenMaps: true }) as any;
+    await enrichPurchaseOrderItemsWithPcsPerUnit(plain.items || []);
+    attachReceivedBreakdown(plain.items || []);
+    return plain;
   }
 
   static async create(data: { requisitionId: string; vendorId: string; items?: any[]; notes?: string }, userId: string) {
@@ -108,6 +286,7 @@ export class PurchaseOrderService {
           displaySize: reqItem.displaySize,
           quantity: qty,
           quantityUom,
+          receivedPieces: 0,
           unitPrice: 0,
           taxRate: 0,
           taxAmount: 0,
@@ -119,9 +298,11 @@ export class PurchaseOrderService {
     const enrichedItems = items.map((item: any) => ({
       ...item,
       receivedQuantity: 0,
+      receivedPieces: 0,
       taxAmount: 0,
       lineTotal: 0,
     }));
+    await enrichPurchaseOrderItemsWithPcsPerUnit(enrichedItems);
 
     const subtotal = 0;
     const taxTotal = 0;
@@ -164,11 +345,13 @@ export class PurchaseOrderService {
       const enrichedItems = data.items.map((item: any) => ({
         ...item,
         receivedQuantity: item.receivedQuantity ?? 0,
+        receivedPieces: item.receivedPieces ?? 0,
         unitPrice: 0,
         taxRate: 0,
         taxAmount: 0,
         lineTotal: 0,
       }));
+      await enrichPurchaseOrderItemsWithPcsPerUnit(enrichedItems);
       po.items = enrichedItems;
       po.pricing = { subtotal: 0, taxTotal: 0, grandTotal: 0 };
     }
