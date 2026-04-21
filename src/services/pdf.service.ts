@@ -1,5 +1,6 @@
 import PDFDocument from 'pdfkit';
 import { IOrder } from '../types';
+import { roundToTwo } from '../utils/helpers';
 
 interface CompanyInfo {
   name: string;
@@ -52,6 +53,40 @@ function amountInWordsAED(n: number): string {
   return s + '.';
 }
 
+function pdfSafeString(v: unknown, fallback: string): string {
+  if (v == null) return fallback;
+  const s = String(v).trim();
+  if (s === '' || s === 'undefined') return fallback;
+  return s;
+}
+
+/** City / state and country for invoice address lines (no stray "undefined", no function-to-string bugs). */
+function formatEmiratesCountry(a: IOrder['billingAddress'] | undefined | null): string {
+  if (!a) return '—';
+  const city = a.city != null ? String(a.city).trim() : '';
+  const state = a.state != null ? String(a.state).trim() : '';
+  const emirate = [city, state].filter(Boolean).join(' / ');
+  const country = a.country != null && String(a.country).trim() !== '' ? String(a.country).trim() : 'UAE';
+  if (emirate) return `${emirate} / ${country}`;
+  return country;
+}
+
+/** Invoice no. shown on PDF — tolerates bad stored values like "INV-undefined". */
+function invoiceNumberForPdf(order: IOrder): string {
+  const orderNo = pdfSafeString(order.orderNumber, '');
+  const raw = order.creditInfo?.invoiceNumber;
+  let fromStored = raw != null && raw !== undefined ? String(raw).trim() : '';
+  if (fromStored === '' || fromStored === 'undefined' || /undefined/i.test(fromStored)) {
+    fromStored = '';
+  }
+  if (fromStored) return fromStored;
+  if (orderNo) return `INV-${orderNo}`;
+  const id = (order as any)._id != null ? String((order as any)._id) : '';
+  const tail = id.replace(/[^a-fA-F0-9]/g, '').slice(-10);
+  if (tail) return `INV-${tail}`;
+  return 'INV';
+}
+
 export class PDFService {
   static async generateOrderPDF(order: IOrder): Promise<Buffer> {
     return new Promise((resolve, reject) => {
@@ -83,36 +118,60 @@ export class PDFService {
     });
   }
 
+  /**
+   * Mongoose documents do not spread/copy with `{ ...doc }` — PDF would lose orderNumber, pricing, creditInfo, etc.
+   * Always convert to a plain object first.
+   */
+  private static orderDocumentToPlain(order: IOrder): IOrder {
+    const anyDoc = order as any;
+    if (anyDoc != null && typeof anyDoc.toObject === 'function') {
+      return anyDoc.toObject({ flattenMaps: true }) as IOrder;
+    }
+    return order;
+  }
+
   /** Ensure order has required fields for PDF; safe for old/incomplete orders */
   private static normalizeOrderForPDF(order: IOrder): IOrder {
-    const items = Array.isArray(order.items) ? order.items : [];
-    const pricing = order.pricing || ({} as IOrder['pricing']);
+    const base = PDFService.orderDocumentToPlain(order);
+    const items = Array.isArray(base.items) ? base.items : [];
+    const pricing = base.pricing || ({} as IOrder['pricing']);
     const subtotal = Number(pricing.subtotal) || 0;
     const taxTotal = Number(pricing.taxTotal) || 0;
     const grandTotal = Number(pricing.grandTotal) || 0;
     const orderDiscountAmount = pricing.orderDiscount?.amount != null ? Number(pricing.orderDiscount.amount) : 0;
     const itemDiscountTotal = Number(pricing.itemDiscountTotal) || 0;
+    const customerDiscountTotal = Number(pricing.customerDiscountTotal) || 0;
+    const shippingDiscount = Number(pricing.shippingDiscount) || 0;
+    const roundingAdjustment = Number(pricing.roundingAdjustment) || 0;
     // Derive totals if missing on old orders
     const itemsTotal = items.reduce((sum: number, i: any) => sum + (Number(i.lineTotal) || 0), 0);
     const derivedGrandTotal = grandTotal > 0 ? grandTotal : itemsTotal || subtotal || 0;
     const derivedSubtotal = subtotal > 0 ? subtotal : Math.max(0, derivedGrandTotal - taxTotal);
     const derivedTaxTotal = taxTotal >= 0 ? taxTotal : Math.max(0, derivedGrandTotal - derivedSubtotal);
 
+    const orderDiscountMeta =
+      pricing.orderDiscount && (orderDiscountAmount > 0 || pricing.orderDiscount.type)
+        ? { ...pricing.orderDiscount, amount: orderDiscountAmount }
+        : pricing.orderDiscount;
+
     return {
-      ...order,
-      createdAt: order.createdAt || new Date(),
+      ...base,
+      createdAt: base.createdAt || new Date(),
       items,
       pricing: {
         ...pricing,
         subtotal: derivedSubtotal,
         itemDiscountTotal,
+        customerDiscountTotal,
         taxTotal: derivedTaxTotal,
         grandTotal: derivedGrandTotal,
-        orderDiscount: orderDiscountAmount > 0 ? { ...pricing.orderDiscount, amount: orderDiscountAmount } : pricing.orderDiscount,
+        orderDiscount: orderDiscountMeta,
         shippingCharge: Number(pricing.shippingCharge) || 0,
+        shippingDiscount,
+        roundingAdjustment,
       },
-      billingAddress: order.billingAddress || ({} as IOrder['billingAddress']),
-      shippingAddress: order.shippingAddress ?? order.billingAddress ?? ({} as IOrder['shippingAddress']),
+      billingAddress: base.billingAddress || ({} as IOrder['billingAddress']),
+      shippingAddress: base.shippingAddress ?? base.billingAddress ?? ({} as IOrder['shippingAddress']),
     } as IOrder;
   }
 
@@ -140,10 +199,18 @@ export class PDFService {
     doc.text(`Email: ${COMPANY_INFO.email}`, left, y), (y += lineHeight);
     doc.text(`TRN: ${COMPANY_INFO.trn}`, left, y);
 
-    const invNumber = order.creditInfo?.invoiceNumber || `INV-${order.orderNumber}`;
-    const invDate = new Date(order.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: '2-digit' });
-    doc.fontSize(7).font('Helvetica-Bold').text('INV. NO.:', right, 56).font('Helvetica').text(invNumber, right + 50, 56);
-    doc.font('Helvetica-Bold').text('Date:', right, 65).font('Helvetica').text(invDate, right + 50, 65);
+    const invNumber = invoiceNumberForPdf(order);
+    const invDate = new Date(order.createdAt || Date.now()).toLocaleDateString('en-GB', {
+      day: 'numeric',
+      month: 'short',
+      year: '2-digit',
+    });
+    const invLabelW = 52;
+    const invValueW = 230 - invLabelW;
+    doc.fontSize(7).font('Helvetica-Bold').text('INV. NO.:', right, 56, { width: invLabelW, align: 'left' });
+    doc.font('Helvetica').text(invNumber, right + invLabelW, 56, { width: invValueW, align: 'right' });
+    doc.font('Helvetica-Bold').text('Date:', right, 65, { width: invLabelW, align: 'left' });
+    doc.font('Helvetica').text(invDate, right + invLabelW, 65, { width: invValueW, align: 'right' });
 
     doc.moveTo(50, 118).lineTo(545, 118).strokeColor('#333').lineWidth(0.5).stroke();
   }
@@ -161,20 +228,18 @@ export class PDFService {
 
     const billAddr = order.billingAddress;
     const shipAddr = order.shippingAddress || order.billingAddress;
-    const cityState = (a: typeof billAddr) => [a?.city, a?.state].filter(Boolean).join(' / ') || '';
-    const countryLine = (a: typeof billAddr) => (a?.country || 'UAE');
 
     doc.font('Helvetica').fontSize(7).fillColor('#000');
-    doc.text('Cus. Code:', left, top + row).text(order.customerCode, left + 58, top + row);
+    doc.text('Cus. Code:', left, top + row).text(pdfSafeString(order.customerCode, '—'), left + 58, top + row);
     doc.text('TRN:', left, top + row * 2).text((order as any).customerTrn || '—', left + 58, top + row * 2);
     doc.text('M/s.:', left, top + row * 3).text((order.customerName || '') + ((order as any).paymentStatus === 'pending' ? ' (Dr)' : ''), left + 58, top + row * 3, { width: 220 });
     doc.text('Address:', left, top + row * 4).text(billAddr?.addressLine1 || '—', left + 58, top + row * 4, { width: 220 });
-    doc.text('Emirates / Country:', left, top + row * 5).text(`${cityState || '—'} / ${countryLine(billAddr)}`, left + 58, top + row * 5, { width: 220 });
+    doc.text('Emirates / Country:', left, top + row * 5).text(formatEmiratesCountry(billAddr), left + 58, top + row * 5, { width: 220 });
 
-    doc.text('Cus. Code:', right, top + row).text(order.customerCode, right + 58, top + row);
+    doc.text('Cus. Code:', right, top + row).text(pdfSafeString(order.customerCode, '—'), right + 58, top + row);
     doc.text('M/s.:', right, top + row * 2).text(order.customerName, right + 58, top + row * 2, { width: 185 });
     doc.text('Address:', right, top + row * 3).text(shipAddr?.addressLine1 || '—', right + 58, top + row * 3, { width: 185 });
-    doc.text('Emirates / Country:', right, top + row * 4).text(`${cityState(shipAddr) || '—'} / ${countryLine(shipAddr)}`, right + 58, top + row * 4, { width: 185 });
+    doc.text('Emirates / Country:', right, top + row * 4).text(formatEmiratesCountry(shipAddr), right + 58, top + row * 4, { width: 185 });
 
     doc.moveTo(50, top + row * 6 + 2).lineTo(545, top + row * 6 + 2).strokeColor('#333').lineWidth(0.5).stroke();
   }
@@ -216,13 +281,20 @@ export class PDFService {
       const unit = item.sellBy === 'pcs' ? 'pcs' : 'unit';
       const qty = Number(item.quantity) || 0;
       const unitPrice = Number(item.unitPrice) || 0;
-      const lineTotal = Number(item.lineTotal) || qty * unitPrice;
+      const rawLineTotal = item.lineTotal;
+      let amount: number;
+      if (rawLineTotal != null && rawLineTotal !== '' && Number.isFinite(Number(rawLineTotal))) {
+        amount = roundToTwo(Number(rawLineTotal));
+      } else {
+        amount = qty > 0 && unitPrice > 0 ? roundToTwo(qty * unitPrice) : 0;
+      }
+      const rateDisplay = qty > 0 ? roundToTwo(amount / qty) : unitPrice;
       doc.text((index + 1).toString(), col.sr, rowTop);
       doc.text(desc, col.desc, rowTop, { width: w.desc });
       doc.text(String(qty), col.qty, rowTop, { width: w.qty, align: 'right' });
       doc.text(unit, col.unit, rowTop, { width: w.unit, align: 'center' });
-      doc.text(unitPrice.toFixed(2), col.rate, rowTop, { width: w.rate, align: 'right' });
-      doc.text(lineTotal.toFixed(2), col.amount, rowTop, { width: w.amount, align: 'right' });
+      doc.text(rateDisplay.toFixed(2), col.rate, rowTop, { width: w.rate, align: 'right' });
+      doc.text(amount.toFixed(2), col.amount, rowTop, { width: w.amount, align: 'right' });
       rowTop += rowHeight;
     });
 
@@ -230,52 +302,90 @@ export class PDFService {
     return rowTop;
   }
 
-  /** Totals: Discount, Total before VAT, VAT Amount, Grand Total AED, Grand Total in Words. Returns y after block. */
+  /** Totals: merchandise subtotal, discounts, net before VAT (sum of line amounts ex VAT), VAT, shipping, grand total. */
   private static generateTaxInvoiceTotals(doc: PDFKit.PDFDocument, order: IOrder, tableBottom: number): number {
     const p = order.pricing || ({} as any);
-    const discount = Number(p.orderDiscount?.amount) || 0;
+    const items = order.items || [];
+    const orderDiscAmt = Number(p.orderDiscount?.amount) || 0;
     const itemDiscount = Number(p.itemDiscountTotal) || 0;
+    const customerDisc = Number(p.customerDiscountTotal) || 0;
     const subtotal = Number(p.subtotal) || 0;
     const taxTotal = Number(p.taxTotal) || 0;
+    const shippingCharge = Number(p.shippingCharge) || 0;
+    const shippingDisc = Number(p.shippingDiscount) || 0;
+    const roundingAdj = Number(p.roundingAdjustment) || 0;
     const grandTotal = Number(p.grandTotal) || 0;
 
-    const boxLeft = 320;
-    const labelWidth = 180;
-    const valueLeft = boxLeft + labelWidth + 10;
+    const sumLineNet = roundToTwo(items.reduce((s: number, i: any) => s + (Number(i.lineTotal) || 0), 0));
+    const composedNet = roundToTwo(Math.max(0, subtotal - itemDiscount - customerDisc - orderDiscAmt));
+    const beforeVat = items.length > 0 ? sumLineNet : composedNet;
+
+    const od = p.orderDiscount as { type?: string; value?: number; amount?: number } | undefined;
+    let orderDiscountLabel = 'Order discount:';
+    if (od?.type === 'percent' && od.value != null && orderDiscAmt > 0.005) {
+      orderDiscountLabel = `Order discount (${Number(od.value)}%):`;
+    } else if (od?.type === 'fixed' && orderDiscAmt > 0.005) {
+      orderDiscountLabel = 'Order discount (fixed):';
+    }
+
+    const boxLeft = 270;
+    const labelWidth = 200;
+    const valueRight = 540;
+    const valueWidth = 72;
     const lineH = 10;
-    let y = tableBottom + 10;
+    let y = tableBottom + 12;
 
-    doc.fontSize(7).font('Helvetica').fillColor('#333');
-    doc.text('Discount:', boxLeft, y);
-    doc.text(discount.toFixed(2), valueLeft, y, { width: 45, align: 'right' });
-    y += lineH;
+    const moneyRow = (label: string, value: string) => {
+      doc.fontSize(7).font('Helvetica').fillColor('#333');
+      doc.text(label, boxLeft, y, { width: labelWidth, align: 'left' });
+      doc.text(value, valueRight - valueWidth, y, { width: valueWidth, align: 'right' });
+      y += lineH;
+    };
 
-    doc.text('Total Amount before Vat (Round off):', boxLeft, y);
-    const beforeVat = Math.max(0, subtotal - discount - itemDiscount);
-    doc.text(beforeVat.toFixed(2), valueLeft, y, { width: 45, align: 'right' });
-    y += lineH;
+    moneyRow('Subtotal (merchandise):', subtotal.toFixed(2));
+    if (itemDiscount > 0.005) {
+      moneyRow('Item / line discount:', `-${itemDiscount.toFixed(2)}`);
+    }
+    if (customerDisc > 0.005) {
+      moneyRow('Customer discount:', `-${customerDisc.toFixed(2)}`);
+    }
+    if (orderDiscAmt > 0.005) {
+      moneyRow(orderDiscountLabel, `-${orderDiscAmt.toFixed(2)}`);
+    }
+    moneyRow('Total amount before VAT (round off):', beforeVat.toFixed(2));
+    moneyRow('VAT amount:', taxTotal.toFixed(2));
+    if (shippingCharge > 0.005) {
+      moneyRow('Shipping / delivery:', shippingCharge.toFixed(2));
+    }
+    if (shippingDisc > 0.005) {
+      moneyRow('Shipping discount:', `-${shippingDisc.toFixed(2)}`);
+    }
+    if (Math.abs(roundingAdj) > 0.005) {
+      moneyRow('Rounding adjustment:', roundingAdj.toFixed(2));
+    }
 
-    doc.text('VAT Amount:', boxLeft, y);
-    doc.text(taxTotal.toFixed(2), valueLeft, y, { width: 45, align: 'right' });
-    y += lineH;
-
-    doc.font('Helvetica-Bold').fontSize(8);
-    doc.text('Grand Total AED:', boxLeft, y);
-    doc.text(grandTotal.toFixed(2), valueLeft, y, { width: 45, align: 'right' });
+    doc.font('Helvetica-Bold').fontSize(8).fillColor('#333');
+    doc.text('Grand total AED:', boxLeft, y, { width: labelWidth, align: 'left' });
+    doc.text(grandTotal.toFixed(2), valueRight - valueWidth, y, { width: valueWidth, align: 'right' });
     y += lineH;
 
     doc.font('Helvetica').fontSize(7);
     const words = amountInWordsAED(grandTotal);
-    doc.text('Grand Total In Words (AED):', boxLeft, y);
-    doc.text(words, boxLeft, y + 8, { width: 225 });
-    return y + 20;
+    doc.text('Grand total in words (AED):', boxLeft, y, { width: labelWidth });
+    doc.text(words, boxLeft, y + 8, { width: valueRight - boxLeft });
+    return y + 28;
   }
 
   /** Footer: Prepared/Checked/Authorised By, Customer Receipt, Terms, Payment Terms, Previous Balance, Payment instruction */
   private static generateTaxInvoiceFooter(doc: PDFKit.PDFDocument, order: IOrder, afterTotalsY: number) {
     const left = 50;
     const right = 300;
-    let y = Math.max(afterTotalsY + 12, 380);
+    let y = afterTotalsY + 12;
+    if (y > 500) {
+      doc.addPage();
+      y = 50;
+    }
+    const blockTop = y;
     const lineH = 8;
 
     doc.fontSize(7).font('Helvetica-Bold').fillColor('#333');
@@ -286,39 +396,62 @@ export class PDFService {
     doc.text('Authorised By:', left + 375, y);
     doc.moveTo(left + 445, y + 9).lineTo(545, y + 9).stroke();
 
-    y += 38;
-    doc.fontSize(7).font('Helvetica-Bold').text('CUSTOMER RECEIPT', right, y);
+    const receiptTop = blockTop + 40;
+    doc.fontSize(7).font('Helvetica-Bold').text('CUSTOMER RECEIPT', right, receiptTop);
     doc.font('Helvetica').fontSize(7);
-    doc.text('Name:', right, y + 10);
-    doc.text('Designation:', right, y + 20);
-    doc.text('Signature:', right, y + 30);
-    doc.text('Date:', right, y + 40);
-    doc.text('Stamp:', right, y + 50);
-    doc.moveTo(right + 38, y + 10).lineTo(right + 220, y + 10).stroke();
-    doc.moveTo(right + 38, y + 20).lineTo(right + 220, y + 20).stroke();
-    doc.moveTo(right + 38, y + 30).lineTo(right + 220, y + 30).stroke();
-    doc.moveTo(right + 38, y + 40).lineTo(right + 220, y + 40).stroke();
-    doc.moveTo(right + 38, y + 50).lineTo(right + 220, y + 50).stroke();
+    doc.text('Name:', right, receiptTop + 10);
+    doc.text('Designation:', right, receiptTop + 20);
+    doc.text('Signature:', right, receiptTop + 30);
+    doc.text('Date:', right, receiptTop + 40);
+    doc.text('Stamp:', right, receiptTop + 50);
+    doc.moveTo(right + 38, receiptTop + 10).lineTo(right + 220, receiptTop + 10).stroke();
+    doc.moveTo(right + 38, receiptTop + 20).lineTo(right + 220, receiptTop + 20).stroke();
+    doc.moveTo(right + 38, receiptTop + 30).lineTo(right + 220, receiptTop + 30).stroke();
+    doc.moveTo(right + 38, receiptTop + 40).lineTo(right + 220, receiptTop + 40).stroke();
+    doc.moveTo(right + 38, receiptTop + 50).lineTo(right + 220, receiptTop + 50).stroke();
 
-    const termsY = Math.max(afterTotalsY + 12, 380);
+    const receiptBottom = receiptTop + 62;
+    const termsTop = receiptBottom + 16;
     doc.fontSize(7).font('Helvetica').fillColor('#333');
-    doc.text('Terms & Conditions:', left, termsY + 42);
-    doc.text('1. Invoices are not to be altered. A separate credit note will be issued if appropriate and mutually agreed.', left, termsY + 50, { width: 250 });
-    doc.text('2. Received the goods in good condition.', left, termsY + 59, { width: 250 });
-
-    let fy = termsY + 78;
+    doc.text('Terms & Conditions:', left, termsTop);
+    const term1 = '1. Invoices are not to be altered. A separate credit note will be issued if appropriate and mutually agreed.';
+    const term1Y = termsTop + 9;
+    const term1Opts = { width: 250, lineGap: 1 };
+    doc.text(term1, left, term1Y, term1Opts);
+    const term1H = doc.heightOfString(term1, { ...term1Opts, width: 250 });
+    const term2Y = term1Y + Math.max(term1H, 10) + 4;
+    doc.text('2. Received the goods in good condition.', left, term2Y, { width: 250, lineGap: 1 });
+    const term2H = doc.heightOfString('2. Received the goods in good condition.', { width: 250, lineGap: 1 });
+    let fy = term2Y + Math.max(term2H, 10) + 8;
+    const refX = left + 102;
+    const o = order as any;
+    const fmtShort = (d: Date | string | undefined) =>
+      d ? new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: '2-digit' }) : '—';
+    const saleOrderNo =
+      pdfSafeString(order.sourceOrderNumber, '') ||
+      pdfSafeString(order.orderNumber, '') ||
+      '—';
+    const deliveryNoRaw =
+      o.deliveryOrderNumber || (order.isFulfillmentSubOrder ? order.orderNumber : undefined);
+    const deliveryNo = pdfSafeString(deliveryNoRaw, '—');
     doc.text('Sales Rep.:', left, fy);
+    doc.text(o.salesRepName || o.salesRep || '—', refX, fy, { width: 200 });
     doc.text('Delivery Order No.:', left, fy + lineH);
+    doc.text(deliveryNo, refX, fy + lineH, { width: 200 });
     doc.text('Sale Order No.:', left, fy + lineH * 2);
+    doc.text(saleOrderNo, refX, fy + lineH * 2, { width: 200 });
     doc.text('Sale Order Date:', left, fy + lineH * 3);
+    doc.text(fmtShort(o.sourceOrderDate || order.createdAt), refX, fy + lineH * 3, { width: 200 });
     doc.text('LPO Number:', left, fy + lineH * 4);
+    doc.text(o.lpoNumber || o.customerPoNumber || '—', refX, fy + lineH * 4, { width: 200 });
     doc.text('LPO Date:', left, fy + lineH * 5);
+    doc.text(fmtShort(o.lpoDate), refX, fy + lineH * 5, { width: 200 });
     doc.text('Payment Terms:', left, fy + lineH * 6);
-    const paymentMethod = (order as any).paymentMethod ?? order.paymentStatus;
-    doc.text(paymentMethod === 'cod' ? 'Cash' : (paymentMethod || '—').toString().replace(/_/g, ' '), left + 72, fy + lineH * 6);
+    const paymentMethod = o.paymentMethod ?? order.paymentStatus;
+    doc.text(paymentMethod === 'cod' ? 'Cash' : (paymentMethod || '—').toString().replace(/_/g, ' '), refX, fy + lineH * 6, { width: 200 });
     doc.text('Previous Balance:', left, fy + lineH * 7);
-    const balanceDue = Number((order as any).balanceDue) || 0;
-    doc.text(balanceDue > 0 ? balanceDue.toFixed(2) : '0.00', left + 72, fy + lineH * 7);
+    const balanceDue = Number(o.balanceDue) || 0;
+    doc.text(balanceDue > 0 ? balanceDue.toFixed(2) : '0.00', refX, fy + lineH * 7, { width: 200 });
 
     doc.font('Helvetica-Bold').fontSize(7);
     doc.text('Draw the Cheques in favour of "Laurel Shine Trading L.L.C." & Obtain an Official Receipt for Cash Payment.', left, fy + lineH * 9, { width: 500 });

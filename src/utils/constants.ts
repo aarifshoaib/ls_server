@@ -1,3 +1,6 @@
+/** VAT % on net merchandise after discounts (UAE). Use `taxRateDefault: 0` in pricing options for exemptions. */
+export const ORDER_VAT_PERCENT = 5;
+
 export const ORDER_STATUS = {
   DRAFT: 'draft',
   PENDING: 'pending',

@@ -12,7 +12,12 @@ const purchaseOrderItemSchema = new Schema<IPurchaseOrderItem>(
     displaySize: { type: String, required: true },
     quantity: { type: Number, required: true, min: 1 },
     quantityUom: { type: String, enum: ['unit', 'pcs'], default: 'unit' },
+    /** Pieces per stock unit from product variant (denormalized for PO display / PI). */
+    pcsPerUnit: { type: Number, min: 1 },
+    /** Sales unit label from product variant (e.g. unit, carton). */
+    unitLabel: { type: String, trim: true },
     receivedQuantity: { type: Number, default: 0 },
+    receivedPieces: { type: Number, min: 0 },
     unitPrice: { type: Number, required: true, default: 0 },
     taxRate: { type: Number, default: 0 },
     taxAmount: { type: Number, default: 0 },

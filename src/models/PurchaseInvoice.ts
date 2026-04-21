@@ -18,7 +18,7 @@ const purchaseInvoiceItemSchema = new Schema<IPurchaseInvoiceItem>(
     purchaseOrderId: { type: Schema.Types.ObjectId, ref: 'PurchaseOrder' },
     purchaseOrderLineRef: String,
     unitPrice: { type: Number, required: true },
-    taxRate: { type: Number, default: 0 },
+    taxRate: { type: Number, default: 5 },
     taxAmount: { type: Number, default: 0 },
     lineTotal: { type: Number, required: true },
     matchReason: String,

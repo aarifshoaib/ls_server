@@ -1,10 +1,14 @@
 import { Response, NextFunction } from 'express';
+import mongoose from 'mongoose';
 import { IAuthRequest } from '../types';
 import Customer from '../models/Customer';
 import { errors } from '../utils/errors';
 import { parsePagination, buildPaginatedResponse } from '../utils/helpers';
 import { NumberingService } from '../services/numbering.service';
-import { getCustomerOrderFinancialSnapshot } from '../services/customerOrderStats.service';
+import {
+  getCustomerOrderFinancialSnapshot,
+  getLatestOutstandingByCustomerIds,
+} from '../services/customerOrderStats.service';
 
 export class CustomerController {
   static async getAll(req: IAuthRequest, res: Response, next: NextFunction) {
@@ -29,16 +33,28 @@ export class CustomerController {
         Customer.countDocuments(filter),
       ]);
 
+      const ledgerOutstanding = await getLatestOutstandingByCustomerIds(
+        customers.map((c) => c._id as mongoose.Types.ObjectId)
+      );
+
       const enriched = customers.map((c) => {
         const o = c.toObject();
         const ci = o.creditInfo || ({} as { creditLimit?: number; currentOutstanding?: number });
         const limit = Number(ci.creditLimit) || 0;
-        const out = Number(ci.currentOutstanding) || 0;
+        const embedded = Number(ci.currentOutstanding) || 0;
+        const idKey = String(c._id);
+        const out = ledgerOutstanding.has(idKey) ? ledgerOutstanding.get(idKey)! : embedded;
+        const prevFs = ((o as any).financialSummary || {}) as Record<string, unknown>;
         return {
           ...o,
           creditInfo: {
             ...ci,
+            currentOutstanding: out,
             availableCredit: Math.max(0, Math.round((limit - out) * 100) / 100),
+          },
+          financialSummary: {
+            ...prevFs,
+            totalOutstanding: out,
           },
         };
       });
@@ -62,8 +78,14 @@ export class CustomerController {
       const snap = await getCustomerOrderFinancialSnapshot(req.params.id);
       const prevFs = (customer as any).financialSummary || {};
       const creditLimit = (customer as any).creditInfo?.creditLimit ?? 0;
-      const currentOutstanding = (customer as any).creditInfo?.currentOutstanding ?? 0;
-      const availableCredit = Math.round(Math.max(0, creditLimit - currentOutstanding) * 100) / 100;
+      const embeddedOutstanding = Number((customer as any).creditInfo?.currentOutstanding) || 0;
+      const ledgerMap = await getLatestOutstandingByCustomerIds([
+        new mongoose.Types.ObjectId(req.params.id),
+      ]);
+      const reconciledOutstanding = ledgerMap.has(req.params.id)
+        ? ledgerMap.get(req.params.id)!
+        : embeddedOutstanding;
+      const availableCredit = Math.round(Math.max(0, creditLimit - reconciledOutstanding) * 100) / 100;
 
       const financialSummary = {
         ...prevFs,
@@ -71,10 +93,12 @@ export class CustomerController {
         totalOrderValue: snap.totalOrderValue,
         averageOrderValue: snap.totalOrders > 0 ? snap.averageOrderValue : 0,
         lastOrderDate: snap.lastOrderDate ?? prevFs.lastOrderDate,
+        totalOutstanding: reconciledOutstanding,
       };
 
       const creditInfo = {
         ...(customer as any).creditInfo,
+        currentOutstanding: reconciledOutstanding,
         availableCredit,
       };
 

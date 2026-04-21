@@ -375,6 +375,20 @@ export interface IPurchaseOrderItem {
   displaySize: string;
   quantity: number;
   quantityUom?: 'unit' | 'pcs';
+  /** Denormalized from product variant salesUom */
+  pcsPerUnit?: number;
+  /** Denormalized from product variant salesUom.unitLabel */
+  unitLabel?: string;
+  /** Cumulative pieces received (PI receive); source of truth with catalog pcsPerUnit for PO progress. */
+  receivedPieces?: number;
+  /** Computed on GET: split of `receivedQuantity` / `receivedPieces` using catalog `pcsPerUnit`. */
+  receivedBreakdown?: {
+    wholeUnits: number;
+    loosePcs: number;
+    pcsPerUnit: number;
+    totalPcs: number;
+    unitLabel: string;
+  };
   receivedQuantity: number;
   unitPrice: number;
   taxRate: number;
@@ -551,9 +565,13 @@ export interface IOrderItem {
   releasedQuantity?: number;
   sellBy?: 'unit' | 'pcs';
   pcsPerUnit?: number;
+  /** Selling price per piece (catalog); optional when derivable from unitPrice + sellBy */
+  pricePerPiece?: number;
   unitPrice: number;
   discountPercent: number;
   discountAmount: number;
+  /** Customer master discount portion for this line (on merchandise, before order discount) */
+  customerDiscountAmount?: number;
   taxRate: number;
   taxAmount: number;
   lineTotal: number;
@@ -569,6 +587,8 @@ export interface IOrderItem {
 export interface IOrderPricing {
   subtotal: number;
   itemDiscountTotal: number;
+  /** Sum of customer-level discounts across lines */
+  customerDiscountTotal?: number;
   orderDiscount?: {
     type: 'percent' | 'fixed';
     value: number;
