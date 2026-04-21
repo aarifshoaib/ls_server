@@ -4,6 +4,7 @@ import Order from '../models/Order';
 import CustomerLedger from '../models/CustomerLedger';
 import PaymentRequest from '../models/PaymentRequest';
 import { errors } from '../utils/errors';
+import { roundToTwo } from '../utils/helpers';
 import { UserRole } from '../types';
 
 const PAYMENT_APPROVER_ROLES: UserRole[] = ['accountant', 'admin', 'super_admin'];
@@ -186,8 +187,8 @@ export class PaymentService {
         const appliedAmount = Math.min(currentBalance, remainingAmount);
 
         if (appliedAmount > 0) {
-          const newPaidAmount = currentPaid + appliedAmount;
-          const newBalance = Math.max(0, netTotal - newPaidAmount);
+          const newPaidAmount = roundToTwo(currentPaid + appliedAmount);
+          const newBalance = roundToTwo(Math.max(0, netTotal - newPaidAmount));
 
           order.paidAmount = newPaidAmount;
           order.balanceDue = newBalance;
@@ -231,8 +232,8 @@ export class PaymentService {
           const appliedAmount = Math.min(currentBalance, remainingAmount);
 
           if (appliedAmount > 0) {
-            const newPaidAmount = currentPaid + appliedAmount;
-            const newBalance = Math.max(0, netTotal - newPaidAmount);
+            const newPaidAmount = roundToTwo(currentPaid + appliedAmount);
+            const newBalance = roundToTwo(Math.max(0, netTotal - newPaidAmount));
 
             openOrder.paidAmount = newPaidAmount;
             openOrder.balanceDue = newBalance;

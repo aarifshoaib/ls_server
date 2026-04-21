@@ -30,9 +30,14 @@ export const roundToTwo = (num: number): number => {
   return Math.round(num * 100) / 100;
 };
 
-/** Round amount up to nearest 0.25 (e.g. 100.05 → 100.25, 100.37 → 100.50). */
-export const roundToNearestQuarter = (num: number): number => {
-  return Math.ceil(num * 4) / 4;
+/**
+ * Round to nearest 0.25 AED (25 / 50 / 75 fils — e.g. 16.12 → 16.00, 16.13 → 16.25).
+ * Used for invoice grand totals and AR so customer outstanding matches billed cash steps.
+ */
+export const roundToNearestQuarterDirham = (num: number): number => {
+  const fils = Math.round(num * 100);
+  const quarterFils = Math.round(fils / 25) * 25;
+  return roundToTwo(quarterFils / 100);
 };
 
 export const parsePagination = (query: IPaginationQuery) => {

@@ -1,4 +1,4 @@
-import { roundToTwo } from './helpers';
+import { roundToTwo, roundToNearestQuarterDirham } from './helpers';
 import { ORDER_VAT_PERCENT } from './constants';
 
 export interface OrderDiscountInput {
@@ -12,7 +12,7 @@ export interface BuildPricedOrderOptions {
   shippingCharge?: number;
   shippingDiscount?: number;
   orderDiscount?: OrderDiscountInput | null;
-  /** Customer master discount (%), applied on line merchandise before order-level discount */
+  /** Customer master discount (%), applied once on order subtotal (not per line). */
   customerDiscountPercent?: number;
 }
 
@@ -89,8 +89,8 @@ export function displayUnitPrice(item: any, pricePerPiece: number): number {
 }
 
 /**
- * Builds order line items: merchandise (price × qty by UOM), customer %, proportional order discount,
- * then VAT once on the net merchandise total. Each line has `taxAmount: 0` and `lineTotal` = net ex VAT.
+ * Builds order line items: each line `lineTotal` = merchandise ex VAT (list; no customer discount on lines).
+ * Customer discount % applies once on order subtotal; order discount on net after that; VAT on final net.
  */
 export function buildPricedOrderItems(
   rawItems: any[],
@@ -118,58 +118,50 @@ export function buildPricedOrderItems(
     const pricePerPiece = derivePricePerPiece(item);
     const lineGross = lineMerchandiseGross(item, pricePerPiece);
     const lineDiscPct = 0;
-    const discountAmount = 0;
+    const discountAmount = roundToTwo(Number(item.discountAmount) || 0);
     const lineAfterLineDisc = Math.max(0, roundToTwo(lineGross - discountAmount));
-    const customerDiscountAmount = roundToTwo((lineAfterLineDisc * customerPct) / 100);
-    const lineMerchNet = Math.max(0, roundToTwo(lineAfterLineDisc - customerDiscountAmount));
 
     return {
       raw: item,
       pricePerPiece,
       lineGross,
+      lineAfterLineDisc,
       discountPercent: lineDiscPct,
       discountAmount,
-      customerDiscountAmount,
-      lineMerchNet,
     };
   });
 
   const subtotal = roundToTwo(rows.reduce((s, r) => s + r.lineGross, 0));
   const itemDiscountTotal = roundToTwo(rows.reduce((s, r) => s + r.discountAmount, 0));
-  const customerDiscountTotal = roundToTwo(rows.reduce((s, r) => s + r.customerDiscountAmount, 0));
-  const totalMerchNet = roundToTwo(rows.reduce((s, r) => s + r.lineMerchNet, 0));
+  const merchandiseAfterLineDisc = roundToTwo(
+    Math.max(0, subtotal - itemDiscountTotal)
+  );
+  const customerDiscountTotal = roundToTwo((merchandiseAfterLineDisc * customerPct) / 100);
+  const netAfterCustomer = Math.max(0, roundToTwo(merchandiseAfterLineDisc - customerDiscountTotal));
 
   let orderDiscountAmount = 0;
   let orderDiscountMeta: { type: 'percent' | 'fixed'; value: number; amount: number } | undefined;
   const od = options.orderDiscount;
-  if (od && totalMerchNet > 0 && Number(od.value) > 0) {
+  if (od && netAfterCustomer > 0 && Number(od.value) > 0) {
     if (od.type === 'percent') {
       orderDiscountAmount = roundToTwo(
-        Math.min(totalMerchNet, (totalMerchNet * Number(od.value)) / 100)
+        Math.min(netAfterCustomer, (netAfterCustomer * Number(od.value)) / 100)
       );
       orderDiscountMeta = { type: 'percent', value: Number(od.value), amount: orderDiscountAmount };
     } else if (od.type === 'fixed') {
-      orderDiscountAmount = roundToTwo(Math.min(totalMerchNet, Number(od.value)));
+      orderDiscountAmount = roundToTwo(Math.min(netAfterCustomer, Number(od.value)));
       orderDiscountMeta = { type: 'fixed', value: Number(od.value), amount: orderDiscountAmount };
     }
   }
 
-  const taxRows = rows.map((r) => {
-    const alloc =
-      totalMerchNet > 0 && orderDiscountAmount > 0
-        ? roundToTwo((orderDiscountAmount * r.lineMerchNet) / totalMerchNet)
-        : 0;
-    const taxable = Math.max(0, roundToTwo(r.lineMerchNet - alloc));
-    return { r, alloc, taxable };
-  });
-
-  const totalTaxable = roundToTwo(taxRows.reduce((s, t) => s + t.taxable, 0));
+  const totalTaxable = Math.max(
+    0,
+    roundToTwo(subtotal - itemDiscountTotal - customerDiscountTotal - orderDiscountAmount)
+  );
   const vatRate = taxRateDefault;
   const taxTotal = roundToTwo((totalTaxable * vatRate) / 100);
 
-  const pricedItems = taxRows.map((t) => {
-    const { r } = t;
-    const lineTotal = roundToTwo(t.taxable);
+  const pricedItems = rows.map((r) => {
     const item = r.raw;
     const unitPriceOut = displayUnitPrice(item, r.pricePerPiece);
     const persistedPiece =
@@ -195,10 +187,10 @@ export function buildPricedOrderItems(
       unitPrice: unitPriceOut,
       discountPercent: r.discountPercent,
       discountAmount: r.discountAmount,
-      customerDiscountAmount: r.customerDiscountAmount,
+      customerDiscountAmount: 0,
       taxRate: vatRate,
       taxAmount: 0,
-      lineTotal,
+      lineTotal: roundToTwo(r.lineAfterLineDisc),
       batchId: item.batchId,
       batchNumber: item.batchNumber,
       expiryDate: item.expiryDate,
@@ -209,9 +201,8 @@ export function buildPricedOrderItems(
     };
   });
 
-  const sumLineTotals = roundToTwo(pricedItems.reduce((s, i) => s + (Number(i.lineTotal) || 0), 0));
-  const grandTotalRaw = roundToTwo(sumLineTotals + taxTotal + shippingCharge - shippingDiscount);
-  const grandTotal = roundToTwo(grandTotalRaw);
+  const grandTotalRaw = roundToTwo(totalTaxable + taxTotal + shippingCharge - shippingDiscount);
+  const grandTotal = roundToNearestQuarterDirham(grandTotalRaw);
   const roundingAdjustment = roundToTwo(grandTotal - grandTotalRaw);
 
   return {
@@ -262,7 +253,7 @@ export function scaleParentOrderLineForRelease(parentLine: any, releaseQty: numb
       ...pl,
       quantity: rq,
       discountAmount: roundToTwo(Number(pl.discountAmount) || 0),
-      customerDiscountAmount: roundToTwo(Number(pl.customerDiscountAmount) || 0),
+      customerDiscountAmount: 0,
       taxAmount: roundToTwo(Number(pl.taxAmount) || 0),
       lineTotal: roundToTwo(Number(pl.lineTotal) || 0),
     };
@@ -272,27 +263,22 @@ export function scaleParentOrderLineForRelease(parentLine: any, releaseQty: numb
     ...pl,
     quantity: rq,
     discountAmount: roundToTwo((Number(pl.discountAmount) || 0) * frac),
-    customerDiscountAmount: roundToTwo((Number(pl.customerDiscountAmount) || 0) * frac),
+    customerDiscountAmount: 0,
     taxAmount: roundToTwo((Number(pl.taxAmount) || 0) * frac),
     lineTotal: roundToTwo((Number(pl.lineTotal) || 0) * frac),
   };
 }
 
-/** Merchandise net after line + customer discount, before order-level discount & VAT (matches buildPricedOrderItems rows). */
+/** Merchandise after line discount only (customer discount is header-only; matches persisted `lineTotal`). */
 export function lineMerchNetBeforeOrderDiscount(item: any): number {
   const ppp = derivePricePerPiece(item);
   const g = lineMerchandiseGross(item, ppp);
-  return Math.max(
-    0,
-    roundToTwo(
-      g - (Number(item.discountAmount) || 0) - (Number(item.customerDiscountAmount) || 0)
-    )
-  );
+  return Math.max(0, roundToTwo(g - (Number(item.discountAmount) || 0)));
 }
 
 /**
- * Roll up sub-order pricing from a subset of lines priced with the full sales order,
- * so order-discount allocation matches the parent (and VAT applies when line `taxAmount` is all zero).
+ * Roll up sub-order pricing from a subset of lines priced with the full sales order.
+ * Header customer / order discounts scale by released merchandise subtotal vs parent subtotal.
  */
 export function rollupSubOrderPricingFromPricedSubset(
   recomputed: ReturnType<typeof buildPricedOrderItems>,
@@ -309,36 +295,48 @@ export function rollupSubOrderPricingFromPricedSubset(
     return clonePricing(recomputed.pricing);
   }
 
-  const subtotal = roundToTwo(
+  const subtotalGross = roundToTwo(
     releasedItems.reduce((s, i) => s + lineMerchandiseGross(i, derivePricePerPiece(i)), 0)
   );
   const itemDiscountTotal = roundToTwo(
     releasedItems.reduce((s, i) => s + (Number(i.discountAmount) || 0), 0)
   );
-  const customerDiscountTotal = roundToTwo(
-    releasedItems.reduce((s, i) => s + (Number(i.customerDiscountAmount) || 0), 0)
+  const p = recomputed.pricing;
+  const parentMerchAfterLine = roundToTwo(
+    Math.max(0, (Number(p.subtotal) || 0) - (Number(p.itemDiscountTotal) || 0))
   );
-  const lineTaxSum = roundToTwo(releasedItems.reduce((s, i) => s + (Number(i.taxAmount) || 0), 0));
-  const sumLineTotals = roundToTwo(releasedItems.reduce((s, i) => s + (Number(i.lineTotal) || 0), 0));
+  const frac =
+    parentMerchAfterLine > 0 ? Math.min(1, Math.max(0, releasedLN / parentMerchAfterLine)) : 0;
+  const customerDiscountTotal = roundToTwo((Number(p.customerDiscountTotal) || 0) * frac);
+  const parentOd = p.orderDiscount;
+  const orderDiscountAmount =
+    parentOd?.amount != null ? roundToTwo(Number(parentOd.amount) * frac) : 0;
+
   const rate = Number(releasedItems[0]?.taxRate) || 5;
+  const lineTaxSum = roundToTwo(releasedItems.reduce((s, i) => s + (Number(i.taxAmount) || 0), 0));
+  const totalTaxable = Math.max(
+    0,
+    roundToTwo(subtotalGross - itemDiscountTotal - customerDiscountTotal - orderDiscountAmount)
+  );
   const taxTotal =
-    lineTaxSum > 0.001 ? lineTaxSum : roundToTwo((sumLineTotals * rate) / 100);
+    lineTaxSum > 0.001 ? lineTaxSum : roundToTwo((totalTaxable * rate) / 100);
 
   const sc = roundToTwo(Number(shippingCharge) || 0);
   const sd = roundToTwo(Number(shippingDiscount) || 0);
-  const grandTotal = roundToTwo(sumLineTotals + taxTotal + sc - sd);
+  const grandTotalRaw = roundToTwo(totalTaxable + taxTotal + sc - sd);
+  const grandTotal = roundToNearestQuarterDirham(grandTotalRaw);
+  const roundingAdjustmentRollup = roundToTwo(grandTotal - grandTotalRaw);
 
-  const od = recomputed.pricing.orderDiscount;
-  let orderDiscountMeta: typeof od;
-  if (od && totalLN > 0) {
+  let orderDiscountMeta: typeof parentOd;
+  if (parentOd && orderDiscountAmount > 0.005) {
     orderDiscountMeta = {
-      ...od,
-      amount: roundToTwo((od.amount * releasedLN) / totalLN),
+      ...parentOd,
+      amount: orderDiscountAmount,
     };
   }
 
   return {
-    subtotal,
+    subtotal: subtotalGross,
     itemDiscountTotal,
     customerDiscountTotal,
     ...(orderDiscountMeta ? { orderDiscount: orderDiscountMeta } : {}),
@@ -346,7 +344,7 @@ export function rollupSubOrderPricingFromPricedSubset(
     shippingCharge: sc,
     shippingDiscount: sd,
     grandTotal,
-    roundingAdjustment: 0,
+    roundingAdjustment: roundingAdjustmentRollup,
   };
 }
 
@@ -362,6 +360,8 @@ export interface FulfillmentReleaseOptions {
    * when persisted line `lineTotal` semantics drift from `rollupOrderLineItemsToPricing`).
    */
   parentHeaderPricing?: ReturnType<typeof buildPricedOrderItems>['pricing'];
+  /** Parent `pricing` for partial releases: scales customer + order discount and VAT like the parent order. */
+  parentPricingSnapshot?: ReturnType<typeof buildPricedOrderItems>['pricing'];
 }
 
 function clonePricing<T>(p: T): T {
@@ -420,18 +420,7 @@ export function buildFulfillmentReleaseFromParentScaled(
     };
   }
 
-  const subtotal = roundToTwo(
-    releaseRows.reduce((sum, r) => {
-      const parentLine = parentItems[r.itemIndex];
-      const pl = parentLine?.toObject ? parentLine.toObject() : { ...parentLine };
-      let raw = { ...pl, quantity: r.quantity };
-      const pid = raw.productId?.toString?.() ?? String(raw.productId);
-      const prod = opts.productById?.get(pid);
-      if (prod) raw = enrichMissingUomFromProduct(raw, prod);
-      const ppp = derivePricePerPiece(raw);
-      return sum + lineMerchandiseGross(raw, ppp);
-    }, 0)
-  );
+  const subtotal = roundToTwo(items.reduce((s, it) => s + (Number(it.lineTotal) || 0), 0));
 
   return {
     items,
@@ -440,11 +429,25 @@ export function buildFulfillmentReleaseFromParentScaled(
       shippingCharge: opts.shippingCharge,
       shippingDiscount: opts.shippingDiscount,
       subtotalOverride: subtotal,
+      vatRateWhenNoLineTax: Number(items[0]?.taxRate) || ORDER_VAT_PERCENT,
+      parentRollup: opts.parentPricingSnapshot
+        ? {
+            merchandiseNetBeforeCustomerDiscount: roundToTwo(
+              Math.max(
+                0,
+                (Number(opts.parentPricingSnapshot.subtotal) || 0) -
+                  (Number(opts.parentPricingSnapshot.itemDiscountTotal) || 0)
+              )
+            ),
+            customerDiscountTotal: Number(opts.parentPricingSnapshot.customerDiscountTotal) || 0,
+            orderDiscountAmount: Number(opts.parentPricingSnapshot.orderDiscount?.amount) || 0,
+          }
+        : undefined,
     }),
   };
 }
 
-/** Roll up `pricing` from already-priced line items (sums money fields + shipping). */
+/** Roll up `pricing` from already-priced line items + optional parent discount scaling + shipping. */
 export function rollupOrderLineItemsToPricing(
   items: any[],
   opts: {
@@ -453,41 +456,81 @@ export function rollupOrderLineItemsToPricing(
     shippingDiscount: number;
     /** When set, use this as subtotal instead of recomputing from piece price × qty. */
     subtotalOverride?: number;
-    /** When sum of line `taxAmount` is ~0, VAT = this rate × sum of line totals (ex VAT). */
+    /** When sum of line `taxAmount` is ~0, VAT = this rate × net merchandise (after header discounts). */
     vatRateWhenNoLineTax?: number;
+    /** Scale customer + order discount from a parent order (fulfillment partial release). */
+    parentRollup?: {
+      /** Merchandise after line-item discounts, before customer % (matches sum of parent line totals). */
+      merchandiseNetBeforeCustomerDiscount: number;
+      customerDiscountTotal: number;
+      orderDiscountAmount: number;
+    };
   }
 ): ReturnType<typeof buildPricedOrderItems>['pricing'] {
-  const subtotal =
-    opts.subtotalOverride != null
-      ? roundToTwo(opts.subtotalOverride)
-      : roundToTwo(
-          items.reduce((sum, raw) => {
-            const ppp = derivePricePerPiece(raw);
-            return sum + lineMerchandiseGross(raw, ppp);
-          }, 0)
-        );
   const lineTaxSum = roundToTwo(items.reduce((s, i) => s + (Number(i.taxAmount) || 0), 0));
   const itemDiscountTotal = roundToTwo(items.reduce((s, i) => s + (Number(i.discountAmount) || 0), 0));
-  const customerDiscountTotal = roundToTwo(
-    items.reduce((s, i) => s + (Number(i.customerDiscountAmount) || 0), 0)
-  );
-  const sumLineTotals = roundToTwo(items.reduce((s, i) => s + (Number(i.lineTotal) || 0), 0));
+
+  let subtotalGross: number;
+  let merchandiseNet: number;
+  if (opts.subtotalOverride != null) {
+    merchandiseNet = roundToTwo(opts.subtotalOverride);
+    subtotalGross = roundToTwo(merchandiseNet + itemDiscountTotal);
+  } else {
+    subtotalGross = roundToTwo(
+      items.reduce((sum, raw) => {
+        const ppp = derivePricePerPiece(raw);
+        return sum + lineMerchandiseGross(raw, ppp);
+      }, 0)
+    );
+    merchandiseNet = roundToTwo(Math.max(0, subtotalGross - itemDiscountTotal));
+  }
+
+  const pr = opts.parentRollup;
+  let customerDiscountTotal: number;
+  let orderDiscountMeta: { type: 'percent' | 'fixed'; value: number; amount: number } | undefined;
+
+  if (pr && pr.merchandiseNetBeforeCustomerDiscount > 0.005) {
+    const frac = Math.min(1, Math.max(0, merchandiseNet / pr.merchandiseNetBeforeCustomerDiscount));
+    customerDiscountTotal = roundToTwo(pr.customerDiscountTotal * frac);
+    const orderDiscountAmount = roundToTwo(pr.orderDiscountAmount * frac);
+    if (orderDiscountAmount > 0.005) {
+      orderDiscountMeta = {
+        type: 'fixed',
+        value: orderDiscountAmount,
+        amount: orderDiscountAmount,
+      };
+    }
+  } else {
+    customerDiscountTotal = roundToTwo(
+      items.reduce((s, i) => s + (Number(i.customerDiscountAmount) || 0), 0)
+    );
+  }
+
   const rate = Number(opts.vatRateWhenNoLineTax ?? items[0]?.taxRate ?? 5);
+  const totalTaxable = Math.max(
+    0,
+    roundToTwo(
+      subtotalGross - itemDiscountTotal - customerDiscountTotal - (orderDiscountMeta?.amount || 0)
+    )
+  );
   const taxTotal =
-    lineTaxSum > 0.001 ? lineTaxSum : roundToTwo((sumLineTotals * rate) / 100);
+    lineTaxSum > 0.001 ? lineTaxSum : roundToTwo((totalTaxable * rate) / 100);
   const sc = opts.includeShipping ? roundToTwo(Number(opts.shippingCharge) || 0) : 0;
   const sd = opts.includeShipping ? roundToTwo(Number(opts.shippingDiscount) || 0) : 0;
-  const grandTotal = roundToTwo(sumLineTotals + taxTotal + sc - sd);
+  const grandTotalRawRoll = roundToTwo(totalTaxable + taxTotal + sc - sd);
+  const grandTotal = roundToNearestQuarterDirham(grandTotalRawRoll);
+  const roundingAdjustmentRoll = roundToTwo(grandTotal - grandTotalRawRoll);
 
   return {
-    subtotal,
+    subtotal: subtotalGross,
     itemDiscountTotal,
     customerDiscountTotal,
+    ...(orderDiscountMeta ? { orderDiscount: orderDiscountMeta } : {}),
     taxTotal,
     shippingCharge: sc,
     shippingDiscount: sd,
     grandTotal,
-    roundingAdjustment: 0,
+    roundingAdjustment: roundingAdjustmentRoll,
   };
 }
 

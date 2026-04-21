@@ -302,10 +302,9 @@ export class PDFService {
     return rowTop;
   }
 
-  /** Totals: merchandise subtotal, discounts, net before VAT (sum of line amounts ex VAT), VAT, shipping, grand total. */
+  /** Totals: merchandise subtotal, header discounts, net before VAT, VAT, shipping, grand total. */
   private static generateTaxInvoiceTotals(doc: PDFKit.PDFDocument, order: IOrder, tableBottom: number): number {
     const p = order.pricing || ({} as any);
-    const items = order.items || [];
     const orderDiscAmt = Number(p.orderDiscount?.amount) || 0;
     const itemDiscount = Number(p.itemDiscountTotal) || 0;
     const customerDisc = Number(p.customerDiscountTotal) || 0;
@@ -316,9 +315,9 @@ export class PDFService {
     const roundingAdj = Number(p.roundingAdjustment) || 0;
     const grandTotal = Number(p.grandTotal) || 0;
 
-    const sumLineNet = roundToTwo(items.reduce((s: number, i: any) => s + (Number(i.lineTotal) || 0), 0));
     const composedNet = roundToTwo(Math.max(0, subtotal - itemDiscount - customerDisc - orderDiscAmt));
-    const beforeVat = items.length > 0 ? sumLineNet : composedNet;
+    /** Line amounts are merchandise ex VAT; customer / order discounts are header-only (match `buildPricedOrderItems`). */
+    const beforeVat = composedNet;
 
     const od = p.orderDiscount as { type?: string; value?: number; amount?: number } | undefined;
     let orderDiscountLabel = 'Order discount:';

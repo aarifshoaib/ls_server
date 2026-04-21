@@ -6,7 +6,7 @@ import Customer from '../models/Customer';
 import CustomerLedger from '../models/CustomerLedger';
 import ApprovalConfig from '../models/ApprovalConfig';
 import { errors } from '../utils/errors';
-import { parsePagination, buildPaginatedResponse, addDays } from '../utils/helpers';
+import { parsePagination, buildPaginatedResponse, addDays, roundToTwo } from '../utils/helpers';
 import { ORDER_VAT_PERCENT } from '../utils/constants';
 import {
   buildPricedOrderItems,
@@ -137,7 +137,7 @@ function reduceParentBalanceDueInMemory(parent: any, amountPosted: number): void
     parent.balanceDue != null && parent.balanceDue !== undefined
       ? Number(parent.balanceDue)
       : Number(parent.pricing?.grandTotal) || 0;
-  parent.balanceDue = Math.max(0, Math.round((prev - amountPosted) * 100) / 100);
+  parent.balanceDue = Math.max(0, roundToTwo(prev - amountPosted));
 }
 
 function clonePlain<T>(v: T): T {
@@ -902,6 +902,7 @@ export class OrderController {
           shippingDiscount: shipDisc,
           productById,
           parentHeaderPricing: includeShipping ? parentPricingPlain : undefined,
+          parentPricingSnapshot: parentPricingPlain,
         });
         pricedRelease = scaled.items;
         subPricing = scaled.pricing;

@@ -1,8 +1,11 @@
 /**
- * Recompute order line totals and pricing using current orderPricing rules:
- * - Merchandise (price × qty by UOM), customer %, order discount, then VAT on net merchandise (default 5%)
+ * Recompute order line totals and pricing using current `buildPricedOrderItems` rules:
+ * - Line amounts = merchandise ex VAT (customer discount is not stored per line).
+ * - Customer % applies once on order subtotal; order discount on net after that; VAT 5% on final net.
  *
- * Optionally refreshes pricePerPiece from the product catalog when a variant exists.
+ * Run `--dry-run` first, then without it to persist. After changing pricing rules, use this to fix existing orders.
+ *
+ * Optionally refreshes pricePerPiece from the product catalog when a variant exists (`--from-product`).
  *
  * Usage:
  *   npx ts-node src/scripts/recomputeOrderPricing.ts

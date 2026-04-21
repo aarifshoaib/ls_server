@@ -200,10 +200,22 @@ async function main() {
     const sd = Number(child.pricing?.shippingDiscount) || 0;
     let newPricing: ReturnType<typeof rollupOrderLineItemsToPricing> | null = null;
     if (canReprice && nextItems.length > 0) {
+      const pp = (parent.pricing as any)?.toObject?.() ?? parent.pricing;
+      const subOverride = roundToTwo(nextItems.reduce((s, it) => s + (Number(it.lineTotal) || 0), 0));
       newPricing = rollupOrderLineItemsToPricing(nextItems, {
         includeShipping: true,
         shippingCharge: sc,
         shippingDiscount: sd,
+        subtotalOverride: subOverride,
+        parentRollup: pp
+          ? {
+              merchandiseNetBeforeCustomerDiscount: roundToTwo(
+                Math.max(0, (Number(pp.subtotal) || 0) - (Number(pp.itemDiscountTotal) || 0))
+              ),
+              customerDiscountTotal: Number(pp.customerDiscountTotal) || 0,
+              orderDiscountAmount: Number(pp.orderDiscount?.amount) || 0,
+            }
+          : undefined,
       });
     }
 
